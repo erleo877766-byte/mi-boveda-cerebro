@@ -1,0 +1,19 @@
+{
+  "name": "miboveda-cerebro",
+  "version": "1.0.0",
+  "description": "Cerebro server: intercambios propios por debajo del minimo + comisiones separadas",
+  "type": "module",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch --env-file-if-exists=.env src/index.js"
+  },
+  "engines": {
+    "node": ">=22.5.0"
+  },
+  "dependencies": {
+    "@libsql/client": "^0.14.0",
+    "express": "^4.21.2",
+    "express-rate-limit": "^7.5.0"
+  }
+}

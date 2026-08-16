@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mi Bóveda · Cerebro</title>
+<link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+<div id="progress-bar" class="progress-bar"><div class="progress-fill"></div></div>
+
+<!-- ===================== LOGIN ===================== -->
+<div id="login-view" class="login-wrap">
+  <div class="login-card">
+    <div class="login-logo"><img src="/logo.png" alt="Mi Bóveda"></div>
+    <h1>Mi Bóveda <span>· Cerebro</span></h1>
+    <p>Panel de administración exclusivo. Intercambios propios por debajo del mínimo.</p>
+    <label class="field"><span>Contraseña de administrador</span>
+      <input id="login-pass" type="password" placeholder="••••••••" autocomplete="current-password">
+    </label>
+    <button id="login-btn" class="btn btn-primary btn-lg">Entrar</button>
+    <div id="login-msg" class="msg"></div>
+  </div>
+</div>
+
+<!-- ===================== PANEL ===================== -->
+<div id="app-view" style="display:none">
+  <header>
+    <div class="header-inner">
+      <div class="brand"><img src="/logo.png" class="brand-logo" alt=""> <span>Mi Bóveda <em>Cerebro</em></span></div>
+      <div class="header-actions">
+        <button id="erleo-toggle" class="btn btn-erleo-on">🟢 Activar intercambios</button>
+        <button id="logout-btn" class="btn btn-ghost">Salir</button>
+      </div>
+    </div>
+
+    <!-- Estado global siempre visible -->
+    <div class="status-strip">
+      <div class="status-item">
+        <span id="conn-dot" class="dot"></span>
+        <div>
+          <div class="k">Conexión</div>
+          <div class="v" id="conn-status">Conectando…</div>
+        </div>
+      </div>
+      <div class="status-item">
+        <div>
+          <div class="k">Pendientes</div>
+          <div class="v" id="pending-count">0</div>
+        </div>
+      </div>
+      <div class="status-item">
+        <div>
+          <div class="k">Comisiones hoy</div>
+          <div class="v" id="today-commissions">$0.00</div>
+        </div>
+      </div>
+      <div class="status-item">
+        <div>
+          <div class="k">Órdenes hoy</div>
+          <div class="v" id="today-orders">0</div>
+        </div>
+      </div>
+    </div>
+
+    <nav id="main-nav">
+      <button class="tab active" data-tab="orders">Órdenes pendientes</button>
+      <button class="tab" data-tab="history">Historial</button>
+      <button class="tab" data-tab="reports">Comisiones Erleo</button>
+      <button class="tab" data-tab="reserves">Direcciones</button>
+      <button class="tab" data-tab="coins">Monedas</button>
+      <button class="tab" data-tab="settings">Comisiones</button>
+      <button class="tab" data-tab="nodes">Nodos</button>
+      <button class="tab" data-tab="market">Mercado</button>
+      <button class="tab" data-tab="notifications">Notificaciones</button>
+      <button class="tab" data-tab="apikey">Clave API</button>
+    </nav>
+  </header>
+
+  <main>
+    <!-- ============ ÓRDENES PENDIENTES ============ -->
+    <section id="tab-orders" class="tab-content active">
+      <div class="section-head">
+        <h2>Órdenes pendientes <span id="pending-count-badge" class="pill pill-warn"></span></h2>
+      </div>
+      <p class="hint">Intercambios que el Cerebro no pudo procesar solo (falta dirección de reserva, moneda desactivada o el usuario espera tu acción). Revisa, aprueba o rechaza.</p>
+      <div id="pending-list"></div>
+    </section>
+
+    <!-- ============ HISTORIAL ============ -->
+    <section id="tab-history" class="tab-content">
+      <div class="section-head">
+        <h2>Historial de órdenes</h2>
+        <button id="clear-history" class="btn btn-danger">Limpiar historial</button>
+      </div>
+      <p class="hint">Todo lo realizado. Las órdenes aprobadas automáticamente aparecen aquí para que envíes los fondos desde tu billetera y marques la entrega.</p>
+      <div id="history-chart"></div>
+      <div id="history-list"></div>
+    </section>
+
+    <!-- ============ COMISIONES ERLEO ============ -->
+    <section id="tab-reports" class="tab-content">
+      <h2>Comisiones · Intercambios Erleo</h2>
+      <p class="hint">Comisión en % por criptomoneda. La moneda se guarda en la nube y el Cerebro la aplica sola en CADA intercambio (ChangeNOW o procesado manual), siempre. El usuario nunca ve el descuento: la comisión llega invisible a tu dirección de cobro. Deja el % en 0 para usar la comisión fija por velocidad (pestaña Comisiones).</p>
+      <div id="report-totals" class="totals"></div>
+      <div id="report-chart"></div>
+      <div id="coin-commission-list"></div>
+      <div id="coin-commission-status" class="hint"></div>
+    </section>
+
+    <!-- ============ DIRECCIONES DE COBRO ============ -->
+    <section id="tab-reserves" class="tab-content">
+      <div class="section-head">
+        <h2>Direcciones de cobro y reserva</h2>
+      </div>
+      <p class="hint">Una tarjeta por cada moneda de la billetera, con sus redes debajo. El Cerebro es el único que conoce estas direcciones: las comisiones llegan a la dirección de cobro y el envío al usuario sale de la dirección de reserva. Dos campos por red y un solo botón Guardar. El saldo de la reserva se consulta solo (por los nodos), no hace falta escribirlo.</p>
+      <div class="reserve-toolbar">
+        <label class="field"><span>Buscar moneda</span>
+          <input id="coin-search" class="input" placeholder="ej. BTC, XNO, XMR…">
+        </label>
+        <span id="coin-count" class="reserve-count"></span>
+      </div>
+      <div id="reserve-list" class="coin-grid"></div>
+    </section>
+
+    <!-- ============ MONEDAS PERSONALIZADAS ============ -->
+    <section id="tab-coins" class="tab-content">
+      <div class="section-head">
+        <h2>Agregar criptomoneda</h2>
+      </div>
+      <p class="hint">Llenas el formulario, el Cerebro revisa que todo esté bien (símbolo repetido, formato de dirección, red) y al guardar la moneda aparece automáticamente en las direcciones, las comisiones, los nodos y el mercado. Los tokens EVM (ERC20/BEP20/Base/Arbitrum/TRC20) también viajan al usuario en su billetera sin que actualice la app. Puedes desactivarla cuando quieras (deja de aparecer, pero no borra nada).</p>
+      <form id="coin-form" class="reserve-form">
+        <input type="hidden" id="cc-id">
+        <div class="form-row">
+          <label class="field"><span>Nombre</span><input id="cc-name" class="input" placeholder="ej. Erleo" required></label>
+          <label class="field"><span>Símbolo</span><input id="cc-symbol" class="input" placeholder="ej. ERLEO" required style="text-transform:uppercase"></label>
+          <label class="field"><span>Tipo de red</span>
+            <select id="cc-network" class="input">
+              <option value="nano">Nano</option>
+              <option value="bitcoin">Bitcoin</option>
+              <option value="ethereum">Ethereum (ERC20)</option>
+              <option value="erc20">ERC20 (otra red)</option>
+              <option value="bep20">BSC (BEP20)</option>
+              <option value="base">Base (ERC20)</option>
+              <option value="arbitrum">Arbitrum (ERC20)</option>
+              <option value="polygon">Polygon (ERC20)</option>
+              <option value="tron">Tron</option>
+              <option value="trc20">TRC20</option>
+              <option value="solana">Solana</option>
+              <option value="custom">Otra / personalizada</option>
+            </select>
+          </label>
+        </div>
+        <div class="form-row">
+          <label class="field"><span>Contrato del token (solo EVM/TRC20)</span><input id="cc-contract" class="input mono" placeholder="0x… o T…"></label>
+          <label class="field"><span>Logo (imagen)</span><input id="cc-logo" type="file" class="input" accept="image/*"></label>
+        </div>
+        <div class="form-row">
+          <label class="field"><span>Dirección de cobro de comisiones</span><input id="cc-fee" class="input mono" placeholder="donde te pagan"></label>
+          <label class="field"><span>Dirección de reserva (envío al usuario)</span><input id="cc-reserve" class="input mono" placeholder="desde donde envías"></label>
+        </div>
+        <div class="form-row">
+          <label class="field" style="flex:1"><span>Nodos (opcional)</span>
+            <textarea id="cc-nodes" class="input mono" rows="2" placeholder="https://nodo1.ejemplo.com&#10;https://nodo2.ejemplo.com" style="min-height:64px"></textarea>
+          </label>
+        </div>
+        <div class="form-row">
+          <button type="submit" class="btn btn-primary" id="cc-submit">Guardar moneda</button>
+          <button type="button" id="cc-cancel" class="btn btn-ghost" style="display:none">Cancelar edición</button>
+          <span id="cc-msg" class="msg" style="display:none"></span>
+        </div>
+      </form>
+      <div id="custom-coin-list"></div>
+    </section>
+
+    <!-- ============ COMISIONES ============ -->
+    <section id="tab-settings" class="tab-content">
+      <h2>Configuración de comisiones</h2>
+      <p class="hint">Valores fijos en dólares. Aplican tanto cuando el usuario envía como cuando recibe esa moneda. Cuando el usuario elige una velocidad en la app, el Cerebro convierte ese valor a la criptomoneda al tipo de cambio actual.</p>
+      <div class="card">
+        <div class="speed-config">
+          <div class="speed-config-row">
+            <span class="speed-icon">🐢</span>
+            <div style="flex:1">
+              <div class="speed-name">Lento</div>
+              <div class="speed-desc">Menor prioridad de confirmación</div>
+            </div>
+            <input id="usd-slow" type="number" step="any" min="0" class="input speed-input">
+            <span class="speed-usd">USD</span>
+          </div>
+          <div class="speed-config-row">
+            <span class="speed-icon">🚶</span>
+            <div style="flex:1">
+              <div class="speed-name">Normal <span class="speed-default">(predeterminado)</span></div>
+              <div class="speed-desc">Balance entre velocidad y costo</div>
+            </div>
+            <input id="usd-medium" type="number" step="any" min="0" class="input speed-input">
+            <span class="speed-usd">USD</span>
+          </div>
+          <div class="speed-config-row">
+            <span class="speed-icon">⚡</span>
+            <div style="flex:1">
+              <div class="speed-name">Rápido</div>
+              <div class="speed-desc">Confirmación inmediata</div>
+            </div>
+            <input id="usd-fast" type="number" step="any" min="0" class="input speed-input">
+            <span class="speed-usd">USD</span>
+          </div>
+        </div>
+        <div class="form-row" style="margin-top:18px">
+          <label class="field"><span>Ver conversión a moneda</span>
+            <input id="usd-convert-symbol" class="input" list="reserve-symbols" placeholder="XNO" style="max-width:160px">
+            <datalist id="reserve-symbols"></datalist>
+          </label>
+          <button id="save-commissions-usd" class="btn btn-primary">Guardar comisiones</button>
+        </div>
+        <div id="commissions-status" class="hint" style="margin-top:12px"></div>
+        <div id="commissions-conversion" class="card conversion-box" style="display:none"></div>
+      </div>
+
+      <h3>Comisión porcentual global (fallback)</h3>
+      <div class="card">
+        <p class="hint">Porcentaje que cobras por cada intercambio en lugar del valor fijo. El % de cada moneda (pestaña Comisiones Erleo) tiene prioridad sobre este. Si el de la moneda y este están en 0, se usa la comisión por velocidad de arriba. Ej.: 1 = 1%.</p>
+        <div class="form-row">
+          <label class="field"><span>Comisión (%)</span><input id="commission-percent" type="number" step="any" class="input" min="0" max="100" style="max-width:160px"></label>
+          <button id="save-commission" class="btn btn-primary">Guardar</button>
+        </div>
+        <div id="commission-status" class="hint" style="margin-top:12px"></div>
+      </div>
+    </section>
+
+    <!-- ============ NODOS ============ -->
+    <section id="tab-nodes" class="tab-content">
+      <div class="section-head">
+        <h2>Nodos por criptomoneda</h2>
+        <button id="sync-cake-btn" class="btn btn-ghost">🔄 Sincronizar nodos de Cake Wallet</button>
+      </div>
+      <p class="hint">El Cerebro es el único que conoce los nodos. La app le pregunta SIEMPRE cuál usar y el Cerebro elige automáticamente el de mayor cobertura (barritas de señal), con cambio automático si cae. Vigila TODOS los nodos TODO el tiempo: cobertura y estado se actualizan solos, y si se reinicia recupera el último estado conocido. Los nodos de Cake Wallet vienen de la lista oficial (se guardan aparte en data/cake_nodes): se pueden desactivar pero no eliminar. Los manuales se eliminan con el botón.</p>
+      <form id="node-form" class="reserve-form">
+        <input type="hidden" id="n-id">
+        <div class="form-row">
+          <label class="field"><span>Moneda</span><input id="n-symbol" class="input" placeholder="XNO" required></label>
+          <label class="field"><span>Nombre</span><input id="n-name" class="input" placeholder="ej. nodo principal"></label>
+        </div>
+        <label class="field"><span>URL del nodo</span>
+          <input id="n-uri" class="input" placeholder="https://..." required>
+        </label>
+        <div class="form-row check-row">
+          <label class="check-line"><input type="checkbox" id="n-enabled" checked> <span>Activo</span></label>
+          <label class="check-line"><input type="checkbox" id="n-trusted"> <span>Confiable</span></label>
+          <label class="check-line"><input type="checkbox" id="n-official"> <span>Oficial</span></label>
+          <label class="check-line"><input type="checkbox" id="n-default"> <span>Predeterminado</span></label>
+          <label class="check-line"><input type="checkbox" id="n-autoswitch" checked> <span>Auto-cambio</span></label>
+        </div>
+        <div class="form-row">
+          <button type="submit" class="btn btn-primary">Agregar nodo</button>
+          <button type="button" id="n-cancel-edit" class="btn btn-ghost" style="display:none">Cancelar edición</button>
+        </div>
+      </form>
+      <div id="node-list"></div>
+    </section>
+
+    <!-- ============ MERCADO ============ -->
+    <section id="tab-market" class="tab-content">
+      <div class="section-head">
+        <h2>Mercado</h2>
+        <span id="market-status" class="pill pill-cyan"></span>
+      </div>
+      <p class="hint">Precios en vivo (Binance, con respaldo CoinGecko): los mismos que usa tu billetera. Con estos precios se convierten automáticamente todas las configuraciones en USD (comisiones, límites, etc.). Si no hay conexión se muestra el último precio conocido y se avisa.</p>
+      <div class="card" style="margin-bottom:14px">
+        <div class="form-row" style="gap:10px;align-items:flex-end">
+          <label class="field"><span>Moneda</span><input id="mkt-symbol" class="input" list="market-symbols" placeholder="BTC">
+            <datalist id="market-symbols"></datalist>
+          </label>
+          <label class="field"><span>Cantidad (cripto)</span><input id="mkt-crypto" class="input" type="number" step="any" min="0" placeholder="1.0"></label>
+          <label class="field"><span>Valor en USD</span><input id="mkt-usd" class="input" type="number" step="any" min="0" placeholder="0.00"></label>
+        </div>
+        <div id="mkt-result" class="hint" style="margin-top:10px"></div>
+      </div>
+      <div class="table-card"><div class="table-scroll">
+        <table class="table"><thead><tr><th>Moneda</th><th>Precio USD</th><th>Estado</th></tr></thead>
+        <tbody id="market-tbody"><tr><td colspan="3" class="empty-cell">Cargando precios…</td></tr></tbody></table>
+      </div></div>
+    </section>
+
+    <!-- ============ NOTIFICACIONES ============ -->
+    <section id="tab-notifications" class="tab-content">
+      <h2>Notificaciones broadcast</h2>
+      <p class="hint">Envía un aviso a TODOS los usuarios conectados al mismo tiempo. La app lo recibe y lo muestra como notificación interna. El usuario solo puede leerla y cerrarla.</p>
+      <div class="card">
+        <div class="form-row" style="margin-bottom:14px">
+          <label class="field"><span>Título</span><input id="notif-title" class="input" placeholder="Ej. Nueva función disponible" maxlength="120"></label>
+        </div>
+        <div class="form-row" style="margin-bottom:16px">
+          <label class="field"><span>Mensaje (opcional)</span><input id="notif-body" class="input" placeholder="Detalle (opcional)"></label>
+        </div>
+        <button id="notif-send" class="btn btn-primary">🔔 Enviar a todos los usuarios</button>
+        <div id="notif-status" class="hint" style="margin-top:12px"></div>
+      </div>
+      <h3>Enviadas recientemente</h3>
+      <div id="notif-list" class="card" style="padding:6px 16px"></div>
+    </section>
+
+    <!-- ============ CLAVE API ============ -->
+    <section id="tab-apikey" class="tab-content">
+      <h2>Clave API de la app</h2>
+      <p class="hint">Esta clave valida que quien se conecta es tu billetera oficial. Se genera aquí, se copia y se pega en la app en Ajustes → Intercambios Erleo. Se muestra solo la primera vez.</p>
+      <div class="card">
+        <div id="apikey-content" class="apikey-box"></div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<!-- ===================== LOADING ===================== -->
+<div id="loading-overlay" class="loading-overlay" style="display:none">
+  <img src="/presentacion.png" class="splash-img" alt="Mi Bóveda">
+  <div class="spinner"></div>
+  <div class="loading-text">Conectando con el Cerebro…</div>
+</div>
+
+<script src="/app.js"></script>
+</body>
+</html>

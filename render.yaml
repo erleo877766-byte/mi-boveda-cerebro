@@ -1,0 +1,21 @@
+services:
+  - type: web
+    name: mi-boveda-cerebro
+    runtime: node
+    repo: https://github.com/leonard0001991/mi-boveda-cerebro
+    plan: free
+    branch: main
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /health
+    envVars:
+      - key: CEREBRO_API_KEY
+        sync: false
+      - key: ADMIN_PASSWORD
+        sync: false
+      - key: SESSION_SECRET
+        sync: false
+      - key: TURSO_DATABASE_URL
+        value: libsql://cerebro-leonard0001991.aws-us-east-1.turso.io
+      - key: TURSO_AUTH_TOKEN
+        sync: false
