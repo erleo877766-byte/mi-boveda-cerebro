@@ -33,6 +33,47 @@ app.get('/health', (req, res) => {
   res.json({ status: 'ok', ts: new Date().toISOString() });
 });
 
+// ============================================================
+// Descarga de instaladores: proxy a los assets de GitHub Releases.
+// Hay redes donde el CDN de descargas de GitHub falla (la descarga se
+// queda en 100% y nunca termina). Este endpoint sirve los archivos a
+// traves del propio servidor (dominio onrender, sin ese CDN) haciendo
+// de puente: el servidor baja el archivo desde GitHub y lo transmite.
+// ============================================================
+const DOWNLOADABLE_FILES = new Map([
+  ['MiBoveda.apk', 'MiBoveda.apk'],
+  ['MiBovedaAntiguos.apk', 'MiBovedaAntiguos.apk'],
+  ['MiBovedaEmulador.apk', 'MiBovedaEmulador.apk'],
+  ['MiBovedaSetup.exe', 'MiBovedaSetup.exe'],
+]);
+
+app.get('/dl/:file', async (req, res) => {
+  const file = req.params.file;
+  if (!DOWNLOADABLE_FILES.has(file)) {
+    return res.status(404).json({ error: 'Archivo no disponible' });
+  }
+  const url = `https://github.com/leonard0001991/mi-boveda/releases/download/latest/${file}`;
+  try {
+    const upstream = await fetch(url, {
+      redirect: 'follow',
+      signal: AbortSignal.timeout(15 * 60 * 1000),
+    });
+    if (!upstream.ok) {
+      return res.status(upstream.status).json({ error: 'Error al obtener el archivo' });
+    }
+    const len = upstream.headers.get('content-length');
+    if (len) res.setHeader('Content-Length', len);
+    res.setHeader('Content-Type', upstream.headers.get('content-type') ?? 'application/octet-stream');
+    res.setHeader('Content-Disposition', `attachment; filename="${file}"`);
+    res.setHeader('Cache-Control', 'public, max-age=3600');
+    const { Readable } = await import('node:stream');
+    Readable.fromWeb(upstream.body).pipe(res);
+  } catch (e) {
+    if (!res.headersSent) res.status(502).json({ error: 'Error de conexion con el origen' });
+    else res.destroy();
+  }
+});
+
 // Dashboard web estatico.
 app.use(express.static(path.join(__dirname, '..', 'public')));
 
