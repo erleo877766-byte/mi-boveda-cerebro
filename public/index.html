@@ -74,6 +74,7 @@
       <button class="tab" data-tab="market">Mercado</button>
       <button class="tab" data-tab="notifications">Notificaciones</button>
       <button class="tab" data-tab="apikey">Clave API</button>
+      <button class="tab" data-tab="appupdate">Actualización de la app</button>
     </nav>
   </header>
 
@@ -307,6 +308,39 @@
       <p class="hint">Esta clave valida que quien se conecta es tu billetera oficial. Se genera aquí, se copia y se pega en la app en Ajustes → Intercambios Erleo. Se muestra solo la primera vez.</p>
       <div class="card">
         <div id="apikey-content" class="apikey-box"></div>
+      </div>
+    </section>
+
+    <!-- ============ ACTUALIZACIÓN DE LA APP ============ -->
+    <section id="tab-appupdate" class="tab-content">
+      <h2>Actualización de la app</h2>
+      <p class="hint">Si pones una versión aquí, la app muestra el aviso "Nueva versión disponible" a los usuarios que tengan una versión menor. Deja la versión vacía para desactivar el aviso. Pon el enlace principal (servidor propio) y un espejo de respaldo por si falla.</p>
+      <div class="card">
+        <div class="form-row">
+          <label class="field"><span>Versión disponible (X.Y.Z)</span>
+            <input id="au-version" class="input" placeholder="ej. 4.0.1" style="max-width:160px">
+          </label>
+        </div>
+        <div class="form-row">
+          <label class="field"><span>Enlace APK (principal)</span>
+            <input id="au-apk-url" class="input" placeholder="https://miboveda-cerebro.onrender.com/dl/MiBoveda.apk">
+          </label>
+          <label class="field"><span>Enlace APK (espejo)</span>
+            <input id="au-apk-mirror" class="input" placeholder="https://github.com/.../MiBoveda.apk">
+          </label>
+        </div>
+        <div class="form-row">
+          <label class="field"><span>Enlace EXE Windows (principal)</span>
+            <input id="au-exe-url" class="input" placeholder="https://miboveda-cerebro.onrender.com/dl/MiBovedaSetup.exe">
+          </label>
+          <label class="field"><span>Enlace EXE Windows (espejo)</span>
+            <input id="au-exe-mirror" class="input" placeholder="https://github.com/.../MiBovedaSetup.exe">
+          </label>
+        </div>
+        <div class="form-row">
+          <button id="save-app-update" class="btn btn-primary">Guardar actualización</button>
+        </div>
+        <div id="app-update-status" class="hint" style="margin-top:12px"></div>
       </div>
     </section>
   </main>

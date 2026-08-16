@@ -542,9 +542,22 @@ async function refreshCommissions() {
   } catch (e) { /* silencioso */ }
 }
 
+async function refreshAppUpdate() {
+  try {
+    const d = await api('/api/v1/settings/app-update');
+    $('au-version').value = d.version || '';
+    $('au-apk-url').value = d.apkUrl || '';
+    $('au-apk-mirror').value = d.apkMirrorUrl || '';
+    $('au-exe-url').value = d.exeUrl || '';
+    $('au-exe-mirror').value = d.exeMirrorUrl || '';
+    $('app-update-status').textContent = d.version
+      ? `Aviso activo: los usuarios con versión menor a ${d.version} verán "Nueva versión disponible".`
+      : 'Aviso desactivado (deja la versión vacía para no mostrar nada).';
+  } catch (e) { /* silencioso */ }
+}
+
 let conversionSymbol = '';
-async function currentSymbolForConversion() {
-  const input = $('usd-convert-symbol');
+async function currentSymbolForConversion() {  const input = $('usd-convert-symbol');
   if (input && input.value.trim()) return input.value.trim().toUpperCase();
   if (conversionSymbol) return conversionSymbol;
   try {
@@ -966,6 +979,7 @@ function refreshTab(tab) {
     if (tab === 'market') return refreshMarket(true);
     if (tab === 'coins') return refreshCustomCoins();
     if (tab === 'apikey') return refreshApiKey();
+    if (tab === 'appupdate') return refreshAppUpdate();
     if (tab === 'notifications') return refreshNotifications();
     return Promise.resolve();
   });
@@ -1280,6 +1294,25 @@ document.addEventListener('DOMContentLoaded', () => {
 
   ['usd-slow', 'usd-medium', 'usd-fast'].forEach((id) => {
     $(id).addEventListener('input', () => updateConversion().catch(() => {}));
+  });
+
+  $('save-app-update').addEventListener('click', async () => {
+    try {
+      const version = $('au-version').value.trim();
+      const apkUrl = $('au-apk-url').value.trim();
+      const apkMirrorUrl = $('au-apk-mirror').value.trim();
+      const exeUrl = $('au-exe-url').value.trim();
+      const exeMirrorUrl = $('au-exe-mirror').value.trim();
+      const r = await api('/api/v1/settings/app-update', {
+        method: 'POST', body: JSON.stringify({ version, apkUrl, apkMirrorUrl, exeUrl, exeMirrorUrl }),
+      });
+      $('app-update-status').textContent = version
+        ? `Guardado: aviso "Nueva versión disponible (${version})" activo.`
+        : 'Guardado: aviso desactivado.';
+      toast('Actualización guardada.');
+    } catch (err) {
+      toast(err.message, true);
+    }
   });
 
   $('notif-send').addEventListener('click', sendNotification);

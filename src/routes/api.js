@@ -173,6 +173,13 @@ async function buildConfig() {
     specialCommissions,
     nodes,
     announcements: [],
+    downloads: {
+      version: (await getSetting('appLatestVersion')).trim(),
+      apkUrl: (await getSetting('appApkUrl')).trim(),
+      apkMirrorUrl: (await getSetting('appApkMirrorUrl')).trim(),
+      exeUrl: (await getSetting('appExeUrl')).trim(),
+      exeMirrorUrl: (await getSetting('appExeMirrorUrl')).trim(),
+    },
     erleoExchangeEnabled,
   };
 }
@@ -333,6 +340,33 @@ router.post('/settings/order-expiry-hours', sessionAuth, async (req, res) => {
     ON CONFLICT(key) DO UPDATE SET value = excluded.value
   `).run(String(clean));
   res.json({ orderExpiryHours: clean });
+});
+
+// ============================================================
+// Actualizacion de la app: version disponible + enlaces de descarga
+// ============================================================
+router.get('/settings/app-update', apiKeyOrSessionAuth, async (req, res) => {
+  res.json({
+    version: (await getSetting('appLatestVersion')).trim(),
+    apkUrl: (await getSetting('appApkUrl')).trim(),
+    apkMirrorUrl: (await getSetting('appApkMirrorUrl')).trim(),
+    exeUrl: (await getSetting('appExeUrl')).trim(),
+    exeMirrorUrl: (await getSetting('appExeMirrorUrl')).trim(),
+  });
+});
+
+router.post('/settings/app-update', sessionAuth, async (req, res) => {
+  const b = req.body || {};
+  const version = String(b.version ?? '').trim();
+  if (version && !/^\d+\.\d+\.\d+$/.test(version)) {
+    return res.status(400).json({ error: 'La versión debe tener formato X.Y.Z (ej. 4.0.1)' });
+  }
+  await setSetting('appLatestVersion', version);
+  await setSetting('appApkUrl', String(b.apkUrl ?? '').trim());
+  await setSetting('appApkMirrorUrl', String(b.apkMirrorUrl ?? '').trim());
+  await setSetting('appExeUrl', String(b.exeUrl ?? '').trim());
+  await setSetting('appExeMirrorUrl', String(b.exeMirrorUrl ?? '').trim());
+  res.json({ ok: true });
 });
 
 // Expira ya las ordenes pending vencidas (tambien corre automaticamente).
