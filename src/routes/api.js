@@ -108,13 +108,13 @@ async function buildConfig() {
   const coins = {};
   const addrRows = await db.prepare('SELECT * FROM coin_addresses').all();
   // La app usa la red principal (network '') de cada moneda.
+  // Solo aparecen las monedas con direccion configurada: cada una conserva su
+  // propio flag enabled. Las monedas SIN reserva no se envian (la app las
+  // trata como habilitadas por defecto para crear billeteras; el admin puede
+  // desactivarlas explicitamente configurando su direccion con enabled=false).
   for (const r of addrRows) {
     if (r.network !== '') continue;
     coins[r.symbol] = { enabled: r.enabled === 1, feeAddress: r.address };
-  }
-  // Monedas soportadas sin reserva configurada -> presentes pero deshabilitadas para este flujo.
-  for (const s of ordersService.SUPPORTED_SYMBOLS) {
-    if (!coins[s]) coins[s] = { enabled: false, feeAddress: '' };
   }
   // Criptomonedas personalizadas del admin: se agregan al config con sus
   // direcciones, y los tokens EVM/TRC20 viajan en customTokens para que la app
