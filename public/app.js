@@ -542,22 +542,9 @@ async function refreshCommissions() {
   } catch (e) { /* silencioso */ }
 }
 
-async function refreshAppUpdate() {
-  try {
-    const d = await api('/api/v1/settings/app-update');
-    $('au-version').value = d.version || '';
-    $('au-apk-url').value = d.apkUrl || '';
-    $('au-apk-mirror').value = d.apkMirrorUrl || '';
-    $('au-exe-url').value = d.exeUrl || '';
-    $('au-exe-mirror').value = d.exeMirrorUrl || '';
-    $('app-update-status').textContent = d.version
-      ? `Aviso activo: los usuarios con versión menor a ${d.version} verán "Nueva versión disponible".`
-      : 'Aviso desactivado (deja la versión vacía para no mostrar nada).';
-  } catch (e) { /* silencioso */ }
-}
-
 let conversionSymbol = '';
-async function currentSymbolForConversion() {  const input = $('usd-convert-symbol');
+async function currentSymbolForConversion() {
+  const input = $('usd-convert-symbol');
   if (input && input.value.trim()) return input.value.trim().toUpperCase();
   if (conversionSymbol) return conversionSymbol;
   try {
@@ -601,7 +588,11 @@ async function updateConversion() {
 // Nodos
 // ============================================================
 function nodeStatus(n) {
-  if (!n.enabled) return '<span class="node-status node-down">Desactivado</span>';
+  if (!n.enabled) {
+    const reason = n.deactivatedReason || n.lastError || '';
+    const tip = reason ? ` title="${esc(reason)}"` : '';
+    return `<span class="node-status node-down"${tip}>Desactivado${reason ? ': ' + esc(reason) : ''}</span>`;
+  }
   if (n.latencyMs <= 0) return '<span class="node-status node-online">Sin medir</span>';
   if (!n.lastCheck || !n.coverage) return '<span class="node-status node-online">Nuevo</span>';
   if (n.latencyMs <= 400) return '<span class="node-status node-online">Rápido</span>';
@@ -666,6 +657,7 @@ async function refreshNodes() {
         <td>${coverageBar(n)}</td>
         <td><div class="actions-cell">
           <button class="btn btn-ghost btn-sm" data-action="edit-node" data-id="${n.id}">Editar</button>
+          ${!n.enabled ? `<button class="btn btn-success btn-sm" data-action="reactivate-node" data-id="${n.id}">Reactivar</button>` : ''}
           ${n.isOfficial
             ? '<span class="btn btn-ghost btn-sm" style="opacity:.55;cursor:not-allowed" title="Los nodos oficiales no se pueden eliminar">🔒 No eliminar</span>'
             : `<button class="btn btn-danger btn-sm" data-action="del-node" data-id="${n.id}">Eliminar</button>`}
@@ -979,7 +971,6 @@ function refreshTab(tab) {
     if (tab === 'market') return refreshMarket(true);
     if (tab === 'coins') return refreshCustomCoins();
     if (tab === 'apikey') return refreshApiKey();
-    if (tab === 'appupdate') return refreshAppUpdate();
     if (tab === 'notifications') return refreshNotifications();
     return Promise.resolve();
   });
@@ -1137,6 +1128,14 @@ document.addEventListener('DOMContentLoaded', () => {
         await api(`/api/v1/nodes/${id}`, { method: 'DELETE' });
         toast('Nodo eliminado.');
         refreshNodes();
+      } else if (action === 'reactivate-node') {
+        try {
+          const result = await api(`/api/v1/nodes/${id}/reactivate`, { method: 'POST', body: '{}' });
+          toast(`Nodo ${result.node?.name || id} reactivado (${Math.round(result.node?.latencyMs || 0)} ms)`);
+          refreshNodes();
+        } catch (err) {
+          toast(err.message, true);
+        }
       } else if (action === 'toggle-coin') {
         await api(`/api/v1/admin/coins/custom/${id}/toggle`, {
           method: 'POST', body: JSON.stringify({ enabled: el.dataset.enabled !== '1' }),
@@ -1167,6 +1166,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
   $('node-form').addEventListener('submit', async (e) => {
     e.preventDefault();
+    const submitBtn = $('node-form').querySelector('button[type=submit]');
+    const oldText = submitBtn.textContent;
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'Validando y probando...';
     try {
       const payload = {
         symbol: $('n-symbol').value.trim().toUpperCase(),
@@ -1178,17 +1181,21 @@ document.addEventListener('DOMContentLoaded', () => {
         isDefault: $('n-default').checked,
         autoSwitch: $('n-autoswitch').checked,
       };
+      let result;
       if (editingNodeId) {
-        await api(`/api/v1/nodes/${editingNodeId}`, { method: 'PUT', body: JSON.stringify(payload) });
-        toast('Nodo actualizado');
+        result = await api(`/api/v1/nodes/${editingNodeId}`, { method: 'PUT', body: JSON.stringify(payload) });
+        toast('Nodo actualizado' + (result.latencyMs ? ` (${Math.round(result.latencyMs)} ms)` : ''));
       } else {
-        await api('/api/v1/nodes', { method: 'POST', body: JSON.stringify(payload) });
-        toast('Nodo agregado');
+        result = await api('/api/v1/nodes', { method: 'POST', body: JSON.stringify(payload) });
+        toast('Nodo agregado' + (result.latencyMs ? ` (${Math.round(result.latencyMs)} ms)` : ''));
       }
       resetNodeForm();
       refreshNodes();
     } catch (err) {
       toast(err.message, true);
+    } finally {
+      submitBtn.disabled = false;
+      submitBtn.textContent = oldText;
     }
   });
 
@@ -1294,25 +1301,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
   ['usd-slow', 'usd-medium', 'usd-fast'].forEach((id) => {
     $(id).addEventListener('input', () => updateConversion().catch(() => {}));
-  });
-
-  $('save-app-update').addEventListener('click', async () => {
-    try {
-      const version = $('au-version').value.trim();
-      const apkUrl = $('au-apk-url').value.trim();
-      const apkMirrorUrl = $('au-apk-mirror').value.trim();
-      const exeUrl = $('au-exe-url').value.trim();
-      const exeMirrorUrl = $('au-exe-mirror').value.trim();
-      const r = await api('/api/v1/settings/app-update', {
-        method: 'POST', body: JSON.stringify({ version, apkUrl, apkMirrorUrl, exeUrl, exeMirrorUrl }),
-      });
-      $('app-update-status').textContent = version
-        ? `Guardado: aviso "Nueva versión disponible (${version})" activo.`
-        : 'Guardado: aviso desactivado.';
-      toast('Actualización guardada.');
-    } catch (err) {
-      toast(err.message, true);
-    }
   });
 
   $('notif-send').addEventListener('click', sendNotification);

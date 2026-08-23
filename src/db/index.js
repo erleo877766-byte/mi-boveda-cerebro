@@ -126,7 +126,17 @@ CREATE TABLE IF NOT EXISTS notifications (
   id        INTEGER PRIMARY KEY AUTOINCREMENT,
   title     TEXT NOT NULL,
   body      TEXT NOT NULL DEFAULT '',
+  priority  TEXT NOT NULL DEFAULT 'normal',   -- normal | urgent | critical
   createdAt TEXT NOT NULL
+);
+
+-- Confirmaciones de lectura: cada dispositivo registra que leyó una notificación.
+CREATE TABLE IF NOT EXISTS notification_reads (
+  notificationId INTEGER NOT NULL,
+  deviceToken    TEXT NOT NULL DEFAULT '',
+  deviceName     TEXT NOT NULL DEFAULT '',
+  readAt         TEXT NOT NULL,
+  PRIMARY KEY (notificationId, deviceToken)
 );
 
 -- Nodos por criptomoneda: el Cerebro los administra y decide cual usar.
@@ -163,12 +173,122 @@ CREATE TABLE IF NOT EXISTS custom_coins (
   enabled         INTEGER NOT NULL DEFAULT 1,
   createdAt       TEXT NOT NULL
 );
+
+-- ============================================================
+-- SEGURIDAD: Auditoría de accesos y sesiones
+-- ============================================================
+CREATE TABLE IF NOT EXISTS login_events (
+  id        INTEGER PRIMARY KEY AUTOINCREMENT,
+  ip        TEXT NOT NULL DEFAULT '',
+  userAgent TEXT NOT NULL DEFAULT '',
+  success   INTEGER NOT NULL DEFAULT 0,
+  note      TEXT NOT NULL DEFAULT '',
+  createdAt TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_login_events_created ON login_events (createdAt);
+
+-- Tokens de dispositivo para la app (en vez de API key estática).
+-- La app registra su dispositivo una vez y recibe un token de corta vida.
+CREATE TABLE IF NOT EXISTS device_tokens (
+  token       TEXT PRIMARY KEY,
+  deviceName  TEXT NOT NULL DEFAULT '',
+  deviceFp    TEXT NOT NULL DEFAULT '',
+  ip          TEXT NOT NULL DEFAULT '',
+  createdAt   TEXT NOT NULL,
+  expiresAt   TEXT NOT NULL,
+  lastUsedAt  TEXT NOT NULL DEFAULT '',
+  revoked     INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_device_tokens_expires ON device_tokens (expiresAt);
+
+-- 2FA TOTP del admin: secret, estado enabled, códigos de respaldo.
+CREATE TABLE IF NOT EXISTS admin_totp (
+  id          INTEGER PRIMARY KEY CHECK (id = 1),
+  secret      TEXT NOT NULL DEFAULT '',
+  enabled     INTEGER NOT NULL DEFAULT 0,
+  backupCodes TEXT NOT NULL DEFAULT '',
+  createdAt   TEXT NOT NULL DEFAULT ''
+);
+
+-- ============================================================
+-- SEGURIDAD: Blocklist de direcciones maliciosas
+-- ============================================================
+CREATE TABLE IF NOT EXISTS address_blocklist (
+  address   TEXT PRIMARY KEY,
+  reason    TEXT NOT NULL DEFAULT '',
+  source    TEXT NOT NULL DEFAULT 'manual',
+  addedAt   TEXT NOT NULL
+);
+
+-- ============================================================
+-- CEREBRO AUTÓNOMO: Configuración y alertas
+-- ============================================================
+CREATE TABLE IF NOT EXISTS protection_settings (
+  key   TEXT PRIMARY KEY,
+  value TEXT NOT NULL DEFAULT ''
+);
+
+CREATE TABLE IF NOT EXISTS protection_alerts (
+  id        INTEGER PRIMARY KEY AUTOINCREMENT,
+  type      TEXT NOT NULL,
+  severity  TEXT NOT NULL DEFAULT 'warning',
+  message   TEXT NOT NULL,
+  details   TEXT NOT NULL DEFAULT '',
+  resolved  INTEGER NOT NULL DEFAULT 0,
+  createdAt TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_protection_alerts_type ON protection_alerts (type, resolved);
+
+-- ============================================================
+-- MODO INTERCAMBIO ERLEO AUTOMATIZADO
+-- Wallets del servidor por moneda (addresses + privkeys cifradas).
+-- Solo el Cerebro las conoce; se usan para ejecutar intercambios
+-- automáticamente sin intervención del admin.
+-- ============================================================
+CREATE TABLE IF NOT EXISTS erleo_wallets (
+  id              INTEGER PRIMARY KEY AUTOINCREMENT,
+  symbol          TEXT NOT NULL,                     -- BTC, ETH, LTC, etc.
+  network         TEXT NOT NULL DEFAULT '',           -- '' = principal
+  address         TEXT NOT NULL,                     -- dirección pública
+  encryptedKey    TEXT NOT NULL DEFAULT '',           -- clave privada cifrada (AES-256-GCM)
+  label           TEXT NOT NULL DEFAULT '',           -- nombre descriptivo
+  enabled         INTEGER NOT NULL DEFAULT 1,
+  balance         REAL NOT NULL DEFAULT 0,            -- último saldo conocido
+  lastBalanceCheck TEXT NOT NULL DEFAULT '',
+  createdAt       TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_erleo_wallets_symbol ON erleo_wallets (symbol, network);
+
+-- Transacciones Erleo automatizadas: registra cada envío/recepción on-chain.
+CREATE TABLE IF NOT EXISTS erleo_transactions (
+  id              INTEGER PRIMARY KEY AUTOINCREMENT,
+  orderId         TEXT,                               -- vincula con orders.id si existe
+  type            TEXT NOT NULL,                      -- 'receive' | 'send' | 'swap'
+  symbol          TEXT NOT NULL,
+  network         TEXT NOT NULL DEFAULT '',
+  fromAddress     TEXT NOT NULL DEFAULT '',
+  toAddress       TEXT NOT NULL DEFAULT '',
+  amount          REAL NOT NULL,
+  txHash          TEXT NOT NULL DEFAULT '',
+  status          TEXT NOT NULL DEFAULT 'pending',    -- pending | broadcasting | confirmed | failed
+  confirmations   INTEGER NOT NULL DEFAULT 0,
+  fee             REAL NOT NULL DEFAULT 0,
+  note            TEXT NOT NULL DEFAULT '',
+  createdAt       TEXT NOT NULL,
+  completedAt     TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_erleo_tx_order ON erleo_transactions (orderId);
+CREATE INDEX IF NOT EXISTS idx_erleo_tx_status ON erleo_transactions (status);
 `);
 
   // Migraciones para tablas que ya existían sin columnas nuevas.
   const migrations = [
     ['ALTER TABLE reserves ADD COLUMN balance REAL NOT NULL DEFAULT 0', 'reserves.balance'],
     ['ALTER TABLE orders ADD COLUMN commissionPercent REAL NOT NULL DEFAULT 0', 'orders.commissionPercent'],
+    ["ALTER TABLE notifications ADD COLUMN priority TEXT NOT NULL DEFAULT 'normal'", 'notifications.priority'],
+    ['ALTER TABLE nodes ADD COLUMN consecutiveFailures INTEGER NOT NULL DEFAULT 0', 'nodes.consecutiveFailures'],
+    ["ALTER TABLE nodes ADD COLUMN deactivatedReason TEXT NOT NULL DEFAULT ''", 'nodes.deactivatedReason'],
+    ["ALTER TABLE nodes ADD COLUMN lastError TEXT NOT NULL DEFAULT ''", 'nodes.lastError'],
   ];
   for (const [sql, name] of migrations) {
     try {

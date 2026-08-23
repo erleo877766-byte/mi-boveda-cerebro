@@ -11,20 +11,64 @@ import { seedDefaultNodes, startNodeMonitor } from './services/nodes.js';
 import { ensureCakeNodes } from './services/cakeNodes.js';
 import { startPricePoller, setCustomCoinSources } from './services/prices.js';
 import { customSymbols } from './services/customCoins.js';
+import { startProtectionMonitor } from './services/autonomous.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = process.env.PORT || 8787;
 
 const app = express();
+
+// ============================================================
+// Seguridad: headers HTTP que protegen contra ataques comunes.
+// ============================================================
+app.use((req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('X-XSS-Protection', '1; mode=block');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+  next();
+});
+
+// ============================================================
+// CORS: solo permite el panel y dominios conocidos.
+// ============================================================
+app.use((req, res, next) => {
+  const origin = req.get('origin');
+  const allowed = [
+    'https://miboveda-cerebro.onrender.com',
+    'http://localhost:8787',
+    'http://localhost:3000',
+    'https://leonard0001991.github.io',
+  ];
+  if (origin && allowed.some((a) => origin.startsWith(a))) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+  } else if (!origin) {
+    // Requests sin origin (app, curl, server-to-server) se permiten.
+  }
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, x-api-key, x-cerebro-api-key, x-session-token, x-device-token');
+  res.setHeader('Access-Control-Max-Age', '86400');
+  if (req.method === 'OPTIONS') return res.sendStatus(204);
+  next();
+});
+
 app.use(express.json({ limit: '100kb' }));
 
-// Proteccion basica contra fuerza bruta en el login.
+// Proteccion contra fuerza bruta en el login.
 const loginLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 20,
   message: { error: 'Demasiados intentos, intente mas tarde' },
 });
 app.post('/api/v1/admin/login', loginLimiter);
+
+// Rate limiting para descargas: max 10 descargas por IP por hora.
+const dlLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 10,
+  message: { error: 'Demasiadas descargas, intenta mas tarde' },
+});
 
 app.use('/api/v1', apiRouter);
 
@@ -47,12 +91,12 @@ const DOWNLOADABLE_FILES = new Map([
   ['MiBovedaSetup.exe', 'MiBovedaSetup.exe'],
 ]);
 
-app.get('/dl/:file', async (req, res) => {
+app.get('/dl/:file', dlLimiter, async (req, res) => {
   const file = req.params.file;
   if (!DOWNLOADABLE_FILES.has(file)) {
     return res.status(404).json({ error: 'Archivo no disponible' });
   }
-  const url = `https://github.com/leonard0001991/mi-boveda/releases/download/latest/${file}`;
+  const url = `https://github.com/erleo877766-byte/mi-boveda/releases/download/latest/${file}`;
   try {
     const upstream = await fetch(url, {
       redirect: 'follow',
@@ -120,6 +164,9 @@ async function bootstrap() {
   setInterval(() => {
     expirePendingOrders().catch(() => {});
   }, 6 * 60 * 60 * 1000);
+
+  // CEREBRO AUTÓNOMO: monitoreo de protección (saldos, volatilidad, sospechosos).
+  startProtectionMonitor();
 
   app.listen(PORT, () => {
     console.log(`[Cerebro] Mi Boveda Cerebro server en http://localhost:${PORT}`);

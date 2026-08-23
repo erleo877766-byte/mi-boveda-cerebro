@@ -1,0 +1,12 @@
+-
+  uri: 37.27.100.59:10500
+  isDefault: true
+  useSSL: false
+  isEnabledForAutoSwitching: true
+  label: "Zano"
+-
+  uri: 37.27.100.59:10500
+  useSSL: false
+  isOfficial: true
+  isEnabledForAutoSwitching: true
+  label: "Mi Bóveda"

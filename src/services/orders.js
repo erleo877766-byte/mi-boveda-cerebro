@@ -2,7 +2,7 @@ import { randomBytes } from 'node:crypto';
 import { db, nowIso, getSetting } from '../db/index.js';
 import { computeNetAmount, recordCommissionEvent, commissionUsdFor, commissionPercent } from './commission.js';
 import { cryptoToUsd } from './prices.js';
-import { validateAddress } from './address_validation.js';
+import { validateAddress, validateAddressAsync, refreshCustomCache } from './address_validation.js';
 import { availableBalance } from './balance.js';
 import { isCustomSymbol } from './customCoins.js';
 
@@ -100,8 +100,10 @@ export async function createOrder(payload) {
     errors.push('toAddress invalida');
   // Validar el FORMATO de la direccion destino segun la moneda: es donde el
   // admin enviara los fondos. Un typo = fondos perdidos.
+  // Usa validateAddressAsync para monedas custom (busca su red en DB).
   if (!errors.includes('toAddress invalida')) {
-    const addrErr = validateAddress(to, payload.toAddress);
+    const toNetwork = String(payload.toNetwork || '');
+    const addrErr = await validateAddressAsync(to, payload.toAddress, toNetwork);
     if (addrErr) errors.push(`toAddress: ${addrErr}`);
   }
   const speed = String(payload.speed ?? 'medium').toLowerCase();

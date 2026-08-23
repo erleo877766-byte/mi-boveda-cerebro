@@ -2,6 +2,7 @@
 // propagan solas a la app (feeAddress, tokens EVM/TRC20) via /config.
 
 import { db, nowIso } from '../db/index.js';
+import { clearCustomCache } from './address_validation.js';
 
 export const NETWORKS = {
   nano: 'Nano',
@@ -248,6 +249,7 @@ export async function createCustomCoin(data) {
   // Propagar a nodos: si el admin escribió nodos, se agregan solos; si no,
   // la moneda queda vacía y la auto-selección funciona apenas se agreguen.
   await seedNodesForSymbol(value.symbol, value.nodes);
+  clearCustomCache();
 
   return { coin: await getCustomCoin(value.symbol) };
 }
@@ -287,6 +289,7 @@ export async function updateCustomCoin(id, data) {
   if (Array.isArray(data.nodes)) {
     await seedNodesForSymbol(value.symbol, data.nodes);
   }
+  clearCustomCache();
 
   return { coin: await getCustomCoin(value.symbol) };
 }
@@ -310,6 +313,7 @@ export async function removeCustomCoin(id) {
   await db.prepare('DELETE FROM coin_addresses WHERE UPPER(symbol) = UPPER(?)').run(row.symbol);
   await db.prepare('DELETE FROM coin_commissions WHERE UPPER(symbol) = UPPER(?)').run(row.symbol);
   await db.prepare('DELETE FROM nodes WHERE UPPER(symbol) = UPPER(?)').run(row.symbol);
+  clearCustomCache();
   return { ok: true, symbol: row.symbol };
 }
 

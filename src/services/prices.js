@@ -3,6 +3,7 @@
 // que el panel y la billetera vean precios lo mas vivos posible.
 
 import { mapLimit } from '../utils.js';
+import { recordPrice } from './autonomous.js';
 
 const BINANCE = 'https://api.binance.com/api/v3/ticker/price?symbol=';
 const COINGECKO = 'https://api.coingecko.com/api/v3/simple/price';
@@ -86,6 +87,7 @@ export async function priceUsd(symbol, force = false) {
 
   if (price != null && price > 0) {
     cache.set(key, { price, at: Date.now() });
+    recordPrice(key, price);
     return price;
   }
   return cached ? cached.price : null;
