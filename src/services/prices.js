@@ -8,7 +8,6 @@ import { recordPrice } from './autonomous.js';
 const BINANCE = 'https://api.binance.com/api/v3/ticker/price?symbol=';
 const COINGECKO = 'https://api.coingecko.com/api/v3/simple/price';
 const COINGECKO_CONTRACT = 'https://api.coingecko.com/api/v3/coins';
-const CRYPTOCOMPARE = 'https://min-api.cryptocompare.com/data/price?fsym=';
 const COINBASE = 'https://api.coinbase.com/v2/prices/';
 const CACHE_TTL_MS = 15_000;
 
@@ -85,10 +84,12 @@ export async function priceUsd(symbol, force = false) {
   if (bin && bin.price) {
     price = parseFloat(bin.price);
   }
-  // Fuente 2: CryptoCompare (sin clave, funciona desde EE.UU.).
+  // Fuente 2: Coinbase (sin clave, funciona desde EE.UU.).
   if (price == null) {
-    const cc = await fetchJson(`${CRYPTOCOMPARE}${ticker}&tsyms=USD`);
-    if (cc && cc.USD && Number(cc.USD) > 0) price = parseFloat(cc.USD);
+    const cb = await fetchJson(`${COINBASE}${ticker}-USD/spot`);
+    if (cb && cb.data && cb.data.amount && Number(cb.data.amount) > 0) {
+      price = parseFloat(cb.data.amount);
+    }
   }
   if (price == null && customSources.has(key)) {
     // Token personalizado (EVM/TRC20): buscar por contrato en CoinGecko.
