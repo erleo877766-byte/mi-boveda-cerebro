@@ -836,7 +836,6 @@ function fillCoinForm(c) {
   $('cc-network').value = c.network;
   $('cc-contract').value = c.contractAddress;
   $('cc-fee').value = c.feeAddress;
-  $('cc-reserve').value = c.reserveAddress;
   $('cc-nodes').value = (c.nodes || []).map((n) => n.uri).join('\n');
   ccLogoData = c.logo || '';
   const isEvmOrTrc = ['ethereum', 'erc20', 'bep20', 'base', 'arbitrum', 'polygon', 'trc20'].includes(c.network);
@@ -871,7 +870,6 @@ function coinRowHtml(c) {
       </div>
       <div class="card-sub" style="margin-top:8px;display:grid;grid-template-columns:1fr 1fr;gap:4px 16px">
         <span>Cobro:</span><span>${addr(c.feeAddress)}</span>
-        <span>Reserva:</span><span>${addr(c.reserveAddress)}</span>
         ${c.contractAddress ? `<span>Contrato:</span><span>${addr(c.contractAddress)}</span>` : ''}
       </div>
       <div style="display:flex;gap:6px;margin-top:10px">
@@ -1226,7 +1224,6 @@ document.addEventListener('DOMContentLoaded', () => {
         network: $('cc-network').value,
         contractAddress: $('cc-contract').value.trim(),
         feeAddress: $('cc-fee').value.trim(),
-        reserveAddress: $('cc-reserve').value.trim(),
         logo: ccLogoData,
         nodes: $('cc-nodes').value.split(/\r?\n/).map((s) => s.trim()).filter(Boolean),
       };

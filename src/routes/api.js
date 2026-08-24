@@ -10,7 +10,7 @@ import { NORMAL_COMMISSION, commissionUsdFor, specialCommissionFor, commissionPe
 import * as nodesService from '../services/nodes.js';
 import * as balanceService from '../services/balance.js';
 import { syncCakeNodes } from '../services/cakeNodes.js';
-import { priceUsd, setCustomCoinSources } from '../services/prices.js';
+import { priceUsd, resolveBatch, setCustomCoinSources } from '../services/prices.js';
 import * as customCoinsService from '../services/customCoins.js';
 import { mapLimit } from '../utils.js';
 import { validateAddress } from '../services/address_validation.js';
@@ -792,6 +792,9 @@ router.get('/market/prices', apiKeyOrSessionAuth, async (req, res) => {
   const requested = req.query.symbols
     ? String(req.query.symbols).split(',').map((s) => s.trim().toUpperCase()).filter((s) => all.includes(s))
     : all;
+  // 1 peticion batch a CoinGecko para todo lo posible; el resto cae a la
+  // cadena por-simbolo (Binance -> Coinbase -> Kraken -> CoinGecko).
+  await resolveBatch(requested).catch(() => {});
   const prices = await mapLimit(requested, 10, async (symbol) => ({
     symbol,
     price: await priceUsd(symbol),

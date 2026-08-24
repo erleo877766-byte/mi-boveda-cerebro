@@ -40,6 +40,11 @@ const TICKER_TO_COINGECKO = {
   PAXG: 'pax-gold', MANA: 'decentraland', CRO: 'crypto-com-chain',
   ARB: 'arbitrum', AVAX: 'avalanche-2', FTM: 'fantom', OP: 'optimism',
   DEURO: 'deuro', DEPS: 'deps', NDEPS: 'ndeps',
+  APE: 'apecoin', BTT: 'bittorrent', BTTC: 'bittorrent', DCR: 'decred',
+  DGB: 'digibyte', DYDX: 'dydx', FIRO: 'firo', HBAR: 'hedera-hashgraph',
+  KAS: 'kaspa', KMD: 'komodo', PIVX: 'pivx', RUNE: 'thorchain',
+  RVN: 'ravencoin', SC: 'siacoin', SCRT: 'secret', STX: 'blockstack',
+  USDC.E: 'usd-coin', XVG: 'verge', ZEN: 'horizen',
 };
 
 // Simbolos de monedas personalizadas -> { network, contractAddress }.
@@ -71,6 +76,28 @@ export function setCustomCoinSources(list) {
       customSources.set(c.symbol.toUpperCase(), { network: c.network, contractAddress: c.contractAddress });
     }
   }
+}
+
+// Resuelve de UNA sola vez (1 peticion a CoinGecko) todos los simbolos del
+// mapa que no tengan cache fresca. Evita el rate-limit al pedir ~80 precios.
+export async function resolveBatch(symbols) {
+  const now = Date.now();
+  const uncached = [];
+  for (const s of symbols || []) {
+    const key = String(s || '').toUpperCase();
+    const hit = cache.get(key);
+    if (!hit || now - hit.at > CACHE_TTL_MS) uncached.push(key);
+  }
+  const ids = [...new Set(uncached.map((s) => TICKER_TO_COINGECKO[s]).filter(Boolean))];
+  if (!ids.length) return;
+  try {
+    const data = await fetchJson(`${COINGECKO}?ids=${ids.join(',')}&vs_currencies=usd`);
+    for (const s of uncached) {
+      const id = TICKER_TO_COINGECKO[s];
+      const usd = id && data && data[id] && data[id].usd;
+      if (usd != null) cache.set(s, { price: Number(usd), at: Date.now() });
+    }
+  } catch (_) {}
 }
 
 // Precio de un simbolo en USD. force=true ignora la cache (lo usa el poller).
