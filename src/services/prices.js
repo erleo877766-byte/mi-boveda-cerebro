@@ -17,11 +17,25 @@ const NETWORK_CG_CHAIN = {
   tron: 'tron', trc20: 'tron',
 };
 
-// Mapeo ticker -> id de CoinGecko para monedas que no tienen par en Binance.
+// Mapeo ticker -> id de CoinGecko. Se usa como respaldo cuando Binance no
+// responde (p.ej. bloqueo geografico de Binance en servidores de EE.UU.).
 const TICKER_TO_COINGECKO = {
   XHV: 'haven', ZANO: 'zano', WOW: 'wownero', BAN: 'banano',
   WETH: 'weth', STETH: 'staked-ether', FLIP: 'chainflip',
   XMR: 'monero', XNO: 'nano', XRP: 'ripple',
+  BTC: 'bitcoin', ETH: 'ethereum', LTC: 'litecoin', BCH: 'bitcoin-cash',
+  DOGE: 'dogecoin', DASH: 'dash', SOL: 'solana', TRX: 'tron',
+  BNB: 'binancecoin', ADA: 'cardano', MATIC: 'matic-network', POL: 'polygon-ecosystem-token',
+  USDT: 'tether', USDC: 'usd-coin', DAI: 'dai', WBTC: 'wrapped-bitcoin',
+  SHIB: 'shiba-inu', PEPE: 'pepe', UNI: 'uniswap', AAVE: 'aave',
+  COMP: 'compound-governance-token', MKR: 'maker', LDO: 'lido-dao',
+  GRT: 'the-graph', STORJ: 'storj', BAT: 'basic-attention-token',
+  ZRX: '0x', OXT: 'orchid', NEXO: 'nexo', CAKE: 'pancakeswap-token',
+  ENS: 'ethereum-name-service', GTC: 'gitcoin', TUSD: 'true-usd',
+  GUSD: 'gemini-dollar', FRAX: 'frax', USDE: 'ethena-usde',
+  PAXG: 'pax-gold', MANA: 'decentraland', CRO: 'crypto-com-chain',
+  ARB: 'arbitrum', AVAX: 'avalanche-2', FTM: 'fantom', OP: 'optimism',
+  DEURO: 'deuro', DEPS: 'deps', NDEPS: 'ndeps',
 };
 
 // Simbolos de monedas personalizadas -> { network, contractAddress }.
