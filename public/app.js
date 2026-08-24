@@ -364,31 +364,28 @@ function netPill(network) {
     : '<span class="pill pill-purple">Principal</span>';
 }
 
+let reserveFilter = 'all';
+const COIN_NAMES = {
+  BTC: 'Bitcoin', ETH: 'Ethereum', USDT: 'Tether', USDC: 'USD Coin', XMR: 'Monero',
+  XNO: 'Nano', BAN: 'Banano', WOW: 'Wownero', SOL: 'Solana', BNB: 'BNB',
+  TRX: 'Tron', LTC: 'Litecoin', DOGE: 'Dogecoin', ADA: 'Cardano', XRP: 'XRP',
+  DOT: 'Polkadot', AVAX: 'Avalanche', MATIC: 'Polygon', ARB: 'Arbitrum', OP: 'Optimism',
+  BASE: 'Base', TON: 'Toncoin', SHIB: 'Shiba Inu', PEPE: 'Pepe', BCH: 'Bitcoin Cash',
+  DASH: 'Dash', ZEC: 'Zcash', EOS: 'EOS', XLM: 'Stellar', APT: 'Aptos', NEAR: 'NEAR',
+};
+
 function networkRowHTML(symbol, network, r) {
   const isConfigured = !!r;
   const balanceText = isConfigured && r.onchainBalance != null
     ? fmtAmount(r.onchainBalance)
     : '';
-  const val = (f) => esc(r ? (r[f] ?? '') : '');
+  const val = esc(r ? (r.address ?? '') : '');
   return `
-    <div class="network-row" data-symbol="${esc(symbol)}" data-network="${esc(network)}">
-      <div class="net-head">
-        ${netPill(network)}
-        <span class="net-balance">${balanceText}</span>
-      </div>
-      <div class="net-fields">
-        <label class="field"><span>Tu dirección de COBRO (aquí entra el dinero)</span>
-          <input class="input net-in" data-f="address" value="${val('address')}" placeholder="Tu dirección de esta moneda/red — el usuario te envía aquí">
-        </label>
-        <label class="field"><span>RESERVA — opcional (vacío = usa el cobro)</span>
-          <input class="input net-in" data-f="payoutAddress" value="${val('payoutAddress')}" placeholder="Solo si quieres pagar desde otra dirección distinta">
-        </label>
-      </div>
-      <div class="net-actions">
-        <div class="actions-cell">
-          <button class="btn btn-primary btn-sm" data-action="save-coin-net">Guardar</button>
-        </div>
-      </div>
+    <div class="addr-row${isConfigured ? ' configured' : ''}" data-symbol="${esc(symbol)}" data-network="${esc(network)}">
+      ${netPill(network)}
+      <input class="input net-in addr-in" data-f="address" value="${val}" placeholder="Pega aquí tu dirección de ${esc(symbol)}${network ? ' (' + esc(network) + ')' : ''}">
+      <span class="net-balance">${balanceText}</span>
+      <button class="btn btn-primary btn-sm addr-save" data-action="save-coin-net">Guardar</button>
     </div>`;
 }
 
@@ -400,13 +397,14 @@ function coinCardHTML(symbol, configuredNetworks, knownNetworks) {
   }).join('');
   const hasConfig = configuredNetworks.length > 0;
   const status = hasConfig
-    ? '<span class="status-pill status-completed">Configurada</span>'
-    : '<span class="status-pill status-rejected">Sin configurar</span>';
+    ? '<span class="status-pill status-completed">✓ Lista</span>'
+    : '<span class="status-pill status-rejected">Sin dirección</span>';
+  const fullName = COIN_NAMES[symbol] || '';
   return `
-    <div class="coin-card">
+    <div class="coin-card${hasConfig ? ' card-ok' : ''}">
       <div class="coin-card-head">
         ${coinLogo(symbol)}
-        <div class="coin-title"><b>${esc(symbol)}</b></div>
+        <div class="coin-title"><b>${esc(symbol)}</b>${fullName ? `<span class="coin-fullname">${esc(fullName)}</span>` : ''}</div>
         ${status}
       </div>
       <div class="coin-networks">${rows}</div>
@@ -430,8 +428,18 @@ async function refreshReserves() {
   symbols = symbols.sort();
 
   const q = ($('coin-search')?.value || '').trim().toUpperCase();
-  const filtered = q ? symbols.filter((s) => s.includes(q)) : symbols;
-  $('coin-count').textContent = filtered.length + ' de ' + symbols.length + ' monedas';
+  let filtered = q ? symbols.filter((s) => s.includes(q)) : symbols;
+  if (reserveFilter === 'ok') filtered = filtered.filter((s) => (configured[s] || []).length > 0);
+  else if (reserveFilter === 'todo') filtered = filtered.filter((s) => !(configured[s] || []).length);
+
+  const okCount = symbols.filter((s) => (configured[s] || []).length > 0).length;
+  $('coin-count').textContent = `${okCount} configuradas de ${symbols.length}`;
+  const fill = $('res-progress-fill');
+  if (fill) {
+    const pct = symbols.length ? Math.round((okCount / symbols.length) * 100) : 0;
+    fill.style.width = pct + '%';
+    fill.classList.toggle('done', pct === 100);
+  }
 
   if (!filtered.length) {
     $('reserve-list').innerHTML = '<div class="empty"><span class="big">🔍</span>No hay monedas que coincidan con la búsqueda.</div>';
@@ -1101,22 +1109,19 @@ document.addEventListener('DOMContentLoaded', () => {
         refreshOrders();
         refreshGlobal();
       } else if (action === 'save-coin-net') {
-        const row = el.closest('.network-row');
+        const row = el.closest('.addr-row');
         const sym = row.dataset.symbol;
         const net = row.dataset.network || '';
-        const read = (f) => {
-          const inp = row.querySelector('.net-in[data-f="' + f + '"]');
-          return inp ? inp.value.trim() : '';
-        };
+        const inp = row.querySelector('.net-in[data-f="address"]');
         await api('/api/v1/coin-addresses', {
           method: 'POST',
-          body: JSON.stringify({
-            symbol: sym, network: net,
-            address: read('address'),
-            payoutAddress: read('payoutAddress'),
-          }),
+          body: JSON.stringify({ symbol: sym, network: net, address: inp.value.trim() }),
         });
         toast(`Dirección de ${sym}${net ? ' (' + net + ')' : ''} guardada`);
+        const btn = row.querySelector('.addr-save');
+        if (btn) { btn.textContent = '✓'; btn.classList.add('saved'); setTimeout(() => { btn.textContent = 'Guardar'; btn.classList.remove('saved'); }, 1600); }
+        row.classList.add('flash-ok');
+        setTimeout(() => row.classList.remove('flash-ok'), 1200);
         refreshReserves();
       } else if (action === 'test-node') {
         const node = await api(`/api/v1/nodes/${id}/test`, { method: 'POST', body: '{}' });
@@ -1261,6 +1266,14 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   $('coin-search').addEventListener('input', refreshReserves);
+  document.querySelectorAll('#reserve-filter .chip').forEach((chip) => {
+    chip.addEventListener('click', () => {
+      document.querySelectorAll('#reserve-filter .chip').forEach((c) => c.classList.remove('active'));
+      chip.classList.add('active');
+      reserveFilter = chip.dataset.filter || 'all';
+      refreshReserves();
+    });
+  });
 
   $('save-commissions-usd').addEventListener('click', async () => {
     try {

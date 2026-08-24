@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Mi Bóveda · Cerebro</title>
-<link rel="stylesheet" href="/styles.css?v=1787577222">
+<link rel="stylesheet" href="/styles.css?v=1787577756">
 </head>
 <body>
 <div id="progress-bar" class="progress-bar"><div class="progress-fill"></div></div>
@@ -115,14 +115,22 @@
     <!-- ============ DIRECCIONES DE COBRO ============ -->
     <section id="tab-reserves" class="tab-content">
       <div class="section-head">
-        <h2>Direcciones de cobro y reserva</h2>
+        <h2>Direcciones de cobro</h2>
       </div>
-      <p class="hint">Una tarjeta por cada moneda de la billetera, con TODAS sus redes debajo (exactamente las mismas redes que ofrece la wallet al usuario). En cada red llenas 2 direcciones: tu dirección de COBRO = donde el usuario te envía su dinero; tu dirección de RESERVA = de donde el Cerebro paga al usuario en modo Erleo. Deja vacías las monedas/redes que no quieras operar. El saldo de la reserva se consulta solo por los nodos. En intercambios procesados por ChangeNOW tu ganancia llega igual: la wallet usa tu clave de afiliado ChangeNOW.</p>
+      <p class="hint">Pega tu dirección en cada moneda que quieras operar. Ahí recibes el dinero de los usuarios y desde ahí pagas sus intercambios. Las monedas sin dirección simplemente no participan en Erléo (ChangeNOW las cubre igual).</p>
+      <div class="res-progress-wrap">
+        <div class="res-progress-bar"><div id="res-progress-fill"></div></div>
+        <span id="coin-count" class="reserve-count"></span>
+      </div>
       <div class="reserve-toolbar">
         <label class="field"><span>Buscar moneda</span>
           <input id="coin-search" class="input" placeholder="ej. BTC, XNO, XMR…">
         </label>
-        <span id="coin-count" class="reserve-count"></span>
+        <div class="filter-chips" id="reserve-filter">
+          <button class="chip active" data-filter="all">Todas</button>
+          <button class="chip" data-filter="ok">✓ Configuradas</button>
+          <button class="chip" data-filter="todo">Sin configurar</button>
+        </div>
       </div>
       <div id="reserve-list" class="coin-grid"></div>
     </section>
@@ -510,6 +518,6 @@
   <div class="loading-text">Conectando con el Cerebro…</div>
 </div>
 
-<script src="/app.js?v=1787577222"></script>
+<script src="/app.js?v=1787577756"></script>
 </body>
 </html>
