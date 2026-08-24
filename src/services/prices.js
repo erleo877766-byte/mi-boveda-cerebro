@@ -9,6 +9,9 @@ const BINANCE = 'https://api.binance.com/api/v3/ticker/price?symbol=';
 const COINGECKO = 'https://api.coingecko.com/api/v3/simple/price';
 const COINGECKO_CONTRACT = 'https://api.coingecko.com/api/v3/coins';
 const COINBASE = 'https://api.coinbase.com/v2/prices/';
+const KRAKEN = 'https://api.kraken.com/0/public/Ticker?pair=';
+// Pares de Kraken para monedas ausentes en Binance/Coinbase (bloqueos o listados).
+const KRAKEN_PAIR = { XMR: 'XMRUSD', XNO: 'NANOUSD', BAN: 'BANUSD', WOW: 'WOWUSD' };
 const CACHE_TTL_MS = 15_000;
 
 // Red EVM -> cadena de CoinGecko (para tokens personalizados por contrato).
@@ -89,6 +92,18 @@ export async function priceUsd(symbol, force = false) {
     const cb = await fetchJson(`${COINBASE}${ticker}-USD/spot`);
     if (cb && cb.data && cb.data.amount && Number(cb.data.amount) > 0) {
       price = parseFloat(cb.data.amount);
+    }
+  }
+  // Fuente 3: Kraken (para XMR, XNO y similares sin par en las anteriores).
+  if (price == null) {
+    const kp = KRAKEN_PAIR[key];
+    if (kp) {
+      const kr = await fetchJson(`${KRAKEN}${kp}`);
+      if (kr && kr.result && (!kr.error || kr.error.length === 0)) {
+        const first = Object.values(kr.result)[0];
+        const last = first && first.c && first.c[0];
+        if (last && Number(last) > 0) price = parseFloat(last);
+      }
     }
   }
   if (price == null && customSources.has(key)) {
