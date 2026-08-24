@@ -40,7 +40,7 @@ const TICKER_TO_COINGECKO = {
   GUSD: 'gemini-dollar', FRAX: 'frax', USDE: 'ethena-usde',
   PAXG: 'pax-gold', MANA: 'decentraland', CRO: 'crypto-com-chain',
   ARB: 'arbitrum', AVAX: 'avalanche-2', FTM: 'fantom', OP: 'optimism',
-  DEURO: 'deuro', DEPS: 'deps', NDEPS: 'ndeps',
+  DEURO: 'decentralized-euro', DEPS: 'deps', NDEPS: 'ndeps',
   APE: 'apecoin', BTT: 'bittorrent', BTTC: 'bittorrent', DCR: 'decred',
   DGB: 'digibyte', DYDX: 'dydx', FIRO: 'firo', HBAR: 'hedera-hashgraph',
   KAS: 'kaspa', KMD: 'komodo', PIVX: 'pivx', RUNE: 'thorchain',
