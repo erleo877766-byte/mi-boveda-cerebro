@@ -10,6 +10,7 @@ const COINGECKO = 'https://api.coingecko.com/api/v3/simple/price';
 const COINGECKO_CONTRACT = 'https://api.coingecko.com/api/v3/coins';
 const COINBASE = 'https://api.coinbase.com/v2/prices/';
 const KRAKEN = 'https://api.kraken.com/0/public/Ticker?pair=';
+const PAPRIKA = 'https://api.coinpaprika.com/v1/tickers';
 // Pares de Kraken para monedas ausentes en Binance/Coinbase (bloqueos o listados).
 const KRAKEN_PAIR = { XMR: 'XMRUSD', XNO: 'NANOUSD', BAN: 'BANUSD', WOW: 'WOWUSD' };
 const CACHE_TTL_MS = 15_000;
@@ -51,6 +52,26 @@ const TICKER_TO_COINGECKO = {
 let customSources = new Map();
 
 const cache = new Map(); // symbol -> { price, at }
+
+// CoinPaprika: sin clave y sin rate-limit estricto; 1 peticion trae TODO.
+const PAPRIKA_TTL_MS = 120_000;
+let paprikaCache = { at: 0, map: new Map() };
+async function paprikaMap() {
+  if (paprikaCache.map.size && Date.now() - paprikaCache.at < PAPRIKA_TTL_MS) return paprikaCache.map;
+  const data = await fetchJson(PAPRIKA);
+  const m = new Map();
+  for (const t of Array.isArray(data) ? data : []) {
+    const sym = String(t.symbol || '').toUpperCase();
+    const usd = t.quotes && t.quotes.USD && t.quotes.USD.price;
+    if (sym && usd != null) m.set(sym, Number(usd));
+  }
+  const alias = { 'USDC.E': 'USDC', BTTC: 'BTT' };
+  for (const [a, b] of Object.entries(alias)) {
+    if (!m.has(a) && m.has(b)) m.set(a, m.get(b));
+  }
+  paprikaCache = { at: Date.now(), map: m };
+  return m;
+}
 let pollerTimer = null;
 let refreshInFlight = false;
 
@@ -78,8 +99,8 @@ export function setCustomCoinSources(list) {
   }
 }
 
-// Resuelve de UNA sola vez (1 peticion a CoinGecko) todos los simbolos del
-// mapa que no tengan cache fresca. Evita el rate-limit al pedir ~80 precios.
+// Resuelve de UNA sola vez todos los simbolos que no tengan cache fresca:
+// 1 peticion a CoinGecko + 1 a CoinPaprika. Evita rate-limits.
 export async function resolveBatch(symbols) {
   const now = Date.now();
   const uncached = [];
@@ -88,6 +109,18 @@ export async function resolveBatch(symbols) {
     const hit = cache.get(key);
     if (!hit || now - hit.at > CACHE_TTL_MS) uncached.push(key);
   }
+  if (!uncached.length) return;
+
+  // CoinPaprika primero (sin limites y cubre casi todo).
+  try {
+    const pm = await paprikaMap();
+    for (const s of uncached) {
+      const p = pm.get(s);
+      if (p != null && p > 0) cache.set(s, { price: Number(p), at: Date.now() });
+    }
+  } catch (_) {}
+
+  // CoinGecko para lo que Paprika no tenga (ids especificos).
   const ids = [...new Set(uncached.map((s) => TICKER_TO_COINGECKO[s]).filter(Boolean))];
   if (!ids.length) return;
   try {
@@ -132,6 +165,14 @@ export async function priceUsd(symbol, force = false) {
         if (last && Number(last) > 0) price = parseFloat(last);
       }
     }
+  }
+  // Fuente 4: CoinPaprika (sin clave; cubre ~2000 monedas en 1 peticion).
+  if (price == null) {
+    try {
+      const pm = await paprikaMap();
+      const pp = pm.get(key);
+      if (pp != null && pp > 0) price = pp;
+    } catch (_) {}
   }
   if (price == null && customSources.has(key)) {
     // Token personalizado (EVM/TRC20): buscar por contrato en CoinGecko.
