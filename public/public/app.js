@@ -380,8 +380,8 @@ function networkRowHTML(symbol, network, r) {
         <label class="field"><span>Tu dirección de COBRO (aquí entra el dinero)</span>
           <input class="input net-in" data-f="address" value="${val('address')}" placeholder="Tu dirección de esta moneda/red — el usuario te envía aquí">
         </label>
-        <label class="field"><span>Dirección de RESERVA (de aquí pagas al usuario)</span>
-          <input class="input net-in" data-f="payoutAddress" value="${val('payoutAddress')}" placeholder="De dónde sale la moneda que le envías al usuario">
+        <label class="field"><span>RESERVA — opcional (vacío = usa el cobro)</span>
+          <input class="input net-in" data-f="payoutAddress" value="${val('payoutAddress')}" placeholder="Solo si quieres pagar desde otra dirección distinta">
         </label>
       </div>
       <div class="net-actions">
