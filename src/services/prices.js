@@ -44,7 +44,7 @@ const TICKER_TO_COINGECKO = {
   DGB: 'digibyte', DYDX: 'dydx', FIRO: 'firo', HBAR: 'hedera-hashgraph',
   KAS: 'kaspa', KMD: 'komodo', PIVX: 'pivx', RUNE: 'thorchain',
   RVN: 'ravencoin', SC: 'siacoin', SCRT: 'secret', STX: 'blockstack',
-  USDC.E: 'usd-coin', XVG: 'verge', ZEN: 'horizen',
+  'USDC.E': 'usd-coin', XVG: 'verge', ZEN: 'horizen',
 };
 
 // Simbolos de monedas personalizadas -> { network, contractAddress }.
