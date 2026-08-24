@@ -74,6 +74,10 @@
       <button class="tab" data-tab="market">Mercado</button>
       <button class="tab" data-tab="notifications">Notificaciones</button>
       <button class="tab" data-tab="apikey">Clave API</button>
+      <button class="tab" data-tab="appupdate">Actualización de la app</button>
+      <button class="tab" data-tab="security">🔒 Seguridad</button>
+      <button class="tab" data-tab="protection">🛡️ Protección</button>
+      <button class="tab" data-tab="blocklist">🚫 Blocklist</button>
     </nav>
   </header>
 
@@ -113,7 +117,7 @@
       <div class="section-head">
         <h2>Direcciones de cobro y reserva</h2>
       </div>
-      <p class="hint">Una tarjeta por cada moneda de la billetera, con sus redes debajo. El Cerebro es el único que conoce estas direcciones: las comisiones llegan a la dirección de cobro y el envío al usuario sale de la dirección de reserva. Dos campos por red y un solo botón Guardar. El saldo de la reserva se consulta solo (por los nodos), no hace falta escribirlo.</p>
+      <p class="hint">Una tarjeta por cada moneda de la billetera, con TODAS sus redes debajo (exactamente las mismas redes que ofrece la wallet al usuario). En cada red llenas 2 direcciones: tu dirección de COBRO = donde el usuario te envía su dinero; tu dirección de RESERVA = de donde el Cerebro paga al usuario en modo Erleo. Deja vacías las monedas/redes que no quieras operar. El saldo de la reserva se consulta solo por los nodos. En intercambios procesados por ChangeNOW tu ganancia llega igual: la wallet usa tu clave de afiliado ChangeNOW.</p>
       <div class="reserve-toolbar">
         <label class="field"><span>Buscar moneda</span>
           <input id="coin-search" class="input" placeholder="ej. BTC, XNO, XMR…">
@@ -307,6 +311,193 @@
       <p class="hint">Esta clave valida que quien se conecta es tu billetera oficial. Se genera aquí, se copia y se pega en la app en Ajustes → Intercambios Erleo. Se muestra solo la primera vez.</p>
       <div class="card">
         <div id="apikey-content" class="apikey-box"></div>
+      </div>
+    </section>
+
+    <!-- ============ ACTUALIZACIÓN DE LA APP ============ -->
+    <section id="tab-appupdate" class="tab-content">
+      <h2>Actualización de la app</h2>
+      <p class="hint">Si pones una versión aquí, la app muestra el aviso "Nueva versión disponible" a los usuarios que tengan una versión menor. Deja la versión vacía para desactivar el aviso. Pon el enlace principal (servidor propio) y un espejo de respaldo por si falla.</p>
+      <div class="card">
+        <div class="form-row">
+          <label class="field"><span>Versión disponible (X.Y.Z)</span>
+            <input id="au-version" class="input" placeholder="ej. 4.0.1" style="max-width:160px">
+          </label>
+        </div>
+        <div class="form-row">
+          <label class="field"><span>Enlace APK (principal)</span>
+            <input id="au-apk-url" class="input" placeholder="https://miboveda-cerebro.onrender.com/dl/MiBoveda.apk">
+          </label>
+          <label class="field"><span>Enlace APK (espejo)</span>
+            <input id="au-apk-mirror" class="input" placeholder="https://github.com/.../MiBoveda.apk">
+          </label>
+        </div>
+        <div class="form-row">
+          <label class="field"><span>Enlace EXE Windows (principal)</span>
+            <input id="au-exe-url" class="input" placeholder="https://miboveda-cerebro.onrender.com/dl/MiBovedaSetup.exe">
+          </label>
+          <label class="field"><span>Enlace EXE Windows (espejo)</span>
+            <input id="au-exe-mirror" class="input" placeholder="https://github.com/.../MiBovedaSetup.exe">
+          </label>
+        </div>
+        <div class="form-row">
+          <button id="save-app-update" class="btn btn-primary">Guardar actualización</button>
+        </div>
+        <div id="app-update-status" class="hint" style="margin-top:12px"></div>
+      </div>
+    </section>
+
+    <!-- ============ SEGURIDAD ============ -->
+    <section id="tab-security" class="tab-content">
+      <div class="section-head"><h2>🔒 Seguridad del panel</h2></div>
+
+      <!-- 2FA -->
+      <div class="card">
+        <h3>Autenticación de dos factores (2FA)</h3>
+        <p class="hint">Protege el panel con un código de tu aplicación autenticadora (Google Authenticator, Authy, etc.).</p>
+        <div id="2fa-status" class="hint" style="margin-bottom:12px">Cargando...</div>
+        <div id="2fa-setup" style="display:none">
+          <button id="2fa-generate" class="btn btn-primary">Generar código QR</button>
+          <div id="2fa-qr" style="margin-top:12px"></div>
+          <div id="2fa-secret" class="hint" style="margin-top:8px;word-break:break-all"></div>
+          <div id="2fa-backup-codes" class="hint" style="margin-top:8px"></div>
+          <label class="field" style="margin-top:12px"><span>Código de verificación (6 dígitos)</span>
+            <input id="2fa-verify-code" class="input" placeholder="000000" maxlength="6">
+          </label>
+          <button id="2fa-verify-btn" class="btn btn-primary" style="margin-top:8px">Activar 2FA</button>
+          <div id="2fa-msg" class="msg"></div>
+        </div>
+        <div id="2fa-active" style="display:none">
+          <p style="color:var(--green)">✅ 2FA activo</p>
+          <label class="field"><span>Desactivar 2FA (ingresa código actual)</span>
+            <input id="2fa-disable-code" class="input" placeholder="000000" maxlength="6">
+          </label>
+          <button id="2fa-disable-btn" class="btn btn-danger" style="margin-top:8px">Desactivar 2FA</button>
+        </div>
+      </div>
+
+      <!-- Sesiones -->
+      <div class="card">
+        <h3>Sesiones activas</h3>
+        <p class="hint">Dispositivos con acceso al panel. Cierra cualquier sesión sospechosa.</p>
+        <div id="sessions-list"></div>
+        <button id="revoke-all-sessions" class="btn btn-danger" style="margin-top:12px">Cerrar todas las demás sesiones</button>
+      </div>
+
+      <!-- Historial de login -->
+      <div class="card">
+        <h3>Historial de accesos</h3>
+        <div id="login-stats" class="hint" style="margin-bottom:8px"></div>
+        <div id="login-history-list"></div>
+        <button id="load-login-history" class="btn btn-ghost" style="margin-top:8px">Cargar más</button>
+      </div>
+
+      <!-- Rotación de API key -->
+      <div class="card">
+        <h3>Rotar API Key</h3>
+        <p class="hint">Genera una nueva API key. La anterior sigue funcionando por el tiempo que elijas (para que la app actualice sin cortarse).</p>
+        <label class="field"><span>Minutos de gracia para la key anterior</span>
+          <input id="rotate-grace-minutes" class="input" type="number" value="60" min="5" max="1440">
+        </label>
+        <button id="rotate-api-key" class="btn btn-warning" style="margin-top:8px">Rotar API Key</button>
+        <div id="rotate-result" class="hint" style="margin-top:8px;word-break:break-all"></div>
+      </div>
+
+      <!-- Tokens de dispositivos -->
+      <div class="card">
+        <h3>Dispositivos registrados (app)</h3>
+        <p class="hint">Tokens de la app móbil. Si ves un dispositivo desconocido, revócalo.</p>
+        <div id="devices-list"></div>
+      </div>
+    </section>
+
+    <!-- ============ PROTECCIÓN AUTÓNOMA ============ -->
+    <section id="tab-protection" class="tab-content">
+      <div class="section-head"><h2>🛡️ Protección autónoma</h2></div>
+      <p class="hint">El Cerebro vigila tus saldos, precios y actividad. Si algo sale mal, pausa automáticamente o te avisa.</p>
+
+      <div class="card">
+        <h3>Configuración general</h3>
+        <label class="toggle-row"><input type="checkbox" id="prot-enabled"> Sistema de protección activo</label>
+        <label class="toggle-row"><input type="checkbox" id="prot-lowbalance"> Alertar si reserva baja del umbral</label>
+        <label class="toggle-row"><input type="checkbox" id="prot-volatility"> Detectar volatilidad extrema</label>
+        <label class="toggle-row"><input type="checkbox" id="prot-autopause-reserve"> Auto-pausar si reserva baja</label>
+        <label class="toggle-row"><input type="checkbox" id="prot-autopause-volatility"> Auto-pausar ante volatilidad</label>
+        <label class="toggle-row"><input type="checkbox" id="prot-autopause-suspicious"> Auto-pausar actividad sospechosa</label>
+      </div>
+
+      <div class="card">
+        <h3>Umbrales por moneda</h3>
+        <div class="form-row">
+          <label class="field"><span>BTC mínimo</span><input id="prot-btc" class="input" type="number" step="0.001" value="0.01"></label>
+          <label class="field"><span>ETH mínimo</span><input id="prot-eth" class="input" type="number" step="0.01" value="0.1"></label>
+        </div>
+        <div class="form-row">
+          <label class="field"><span>SOL mínimo</span><input id="prot-sol" class="input" type="number" step="0.1" value="1"></label>
+          <label class="field"><span>XMR mínimo</span><input id="prot-xmr" class="input" type="number" step="0.1" value="0.5"></label>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>Volatilidad</h3>
+        <div class="form-row">
+          <label class="field"><span>% Umbral</span><input id="prot-vol-pct" class="input" type="number" value="5" min="1" max="50"></label>
+          <label class="field"><span>Ventana (segundos)</span><input id="prot-vol-window" class="input" type="number" value="60" min="10" max="300"></label>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>Actividad sospechosa</h3>
+        <label class="field"><span>Máx órdenes/minuto por key</span>
+          <input id="prot-rate-limit" class="input" type="number" value="5" min="1" max="50">
+        </label>
+      </div>
+
+      <button id="save-protection" class="btn btn-primary" style="margin-top:16px">Guardar configuración</button>
+      <div id="prot-msg" class="msg"></div>
+
+      <!-- Monedas pausadas -->
+      <div class="card" style="margin-top:20px">
+        <h3>Monedas pausadas</h3>
+        <div id="paused-list"></div>
+      </div>
+
+      <!-- Alertas activas -->
+      <div class="card" style="margin-top:20px">
+        <h3>Alertas activas</h3>
+        <button id="resolve-all-alerts" class="btn btn-ghost">Resolver todas</button>
+        <div id="alerts-list"></div>
+      </div>
+
+      <!-- Pausar manual -->
+      <div class="card" style="margin-top:20px">
+        <h3>Pausar moneda manualmente</h3>
+        <div class="form-row">
+          <label class="field"><span>Moneda</span><input id="manual-pause-symbol" class="input" placeholder="BTC"></label>
+          <label class="field"><span>Duración (min)</span><input id="manual-pause-duration" class="input" type="number" value="60" min="1"></label>
+        </div>
+        <button id="manual-pause-btn" class="btn btn-warning">Pausar</button>
+      </div>
+    </section>
+
+    <!-- ============ BLOCKLIST ============ -->
+    <section id="tab-blocklist" class="tab-content">
+      <div class="section-head"><h2>🚫 Blocklist de direcciones</h2></div>
+      <p class="hint">Direcciones que el Cerebro rechazará automáticamente. Si alguien intenta enviar fondos a una de estas direcciones, la orden se bloquea.</p>
+
+      <div class="card">
+        <h3>Agregar dirección</h3>
+        <div class="form-row">
+          <label class="field"><span>Dirección</span><input id="bl-address" class="input" placeholder="bc1q... o 0x..."></label>
+          <label class="field"><span>Motivo</span><input id="bl-reason" class="input" placeholder="Scam conocido, phishing..."></label>
+        </div>
+        <button id="bl-add" class="btn btn-danger">Bloquear dirección</button>
+        <div id="bl-msg" class="msg"></div>
+      </div>
+
+      <div class="card" style="margin-top:16px">
+        <h3>Direcciones bloqueadas</h3>
+        <div id="bl-list"></div>
       </div>
     </section>
   </main>

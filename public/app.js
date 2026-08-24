@@ -377,11 +377,11 @@ function networkRowHTML(symbol, network, r) {
         <span class="net-balance">${balanceText}</span>
       </div>
       <div class="net-fields">
-        <label class="field"><span>Cobro de comisión</span>
-          <input class="input net-in" data-f="address" value="${val('address')}" placeholder="Donde llegan tus comisiones">
+        <label class="field"><span>Tu dirección de COBRO (aquí entra el dinero)</span>
+          <input class="input net-in" data-f="address" value="${val('address')}" placeholder="Tu dirección de esta moneda/red — el usuario te envía aquí">
         </label>
-        <label class="field"><span>Dirección de reserva — Envíos manuales</span>
-          <input class="input net-in" data-f="payoutAddress" value="${val('payoutAddress')}" placeholder="Desde dónde envías al usuario">
+        <label class="field"><span>Dirección de RESERVA (de aquí pagas al usuario)</span>
+          <input class="input net-in" data-f="payoutAddress" value="${val('payoutAddress')}" placeholder="De dónde sale la moneda que le envías al usuario">
         </label>
       </div>
       <div class="net-actions">
@@ -542,9 +542,22 @@ async function refreshCommissions() {
   } catch (e) { /* silencioso */ }
 }
 
+async function refreshAppUpdate() {
+  try {
+    const d = await api('/api/v1/settings/app-update');
+    $('au-version').value = d.version || '';
+    $('au-apk-url').value = d.apkUrl || '';
+    $('au-apk-mirror').value = d.apkMirrorUrl || '';
+    $('au-exe-url').value = d.exeUrl || '';
+    $('au-exe-mirror').value = d.exeMirrorUrl || '';
+    $('app-update-status').textContent = d.version
+      ? `Aviso activo: los usuarios con versión menor a ${d.version} verán "Nueva versión disponible".`
+      : 'Aviso desactivado (deja la versión vacía para no mostrar nada).';
+  } catch (e) { /* silencioso */ }
+}
+
 let conversionSymbol = '';
-async function currentSymbolForConversion() {
-  const input = $('usd-convert-symbol');
+async function currentSymbolForConversion() {  const input = $('usd-convert-symbol');
   if (input && input.value.trim()) return input.value.trim().toUpperCase();
   if (conversionSymbol) return conversionSymbol;
   try {
@@ -588,11 +601,7 @@ async function updateConversion() {
 // Nodos
 // ============================================================
 function nodeStatus(n) {
-  if (!n.enabled) {
-    const reason = n.deactivatedReason || n.lastError || '';
-    const tip = reason ? ` title="${esc(reason)}"` : '';
-    return `<span class="node-status node-down"${tip}>Desactivado${reason ? ': ' + esc(reason) : ''}</span>`;
-  }
+  if (!n.enabled) return '<span class="node-status node-down">Desactivado</span>';
   if (n.latencyMs <= 0) return '<span class="node-status node-online">Sin medir</span>';
   if (!n.lastCheck || !n.coverage) return '<span class="node-status node-online">Nuevo</span>';
   if (n.latencyMs <= 400) return '<span class="node-status node-online">Rápido</span>';
@@ -657,7 +666,6 @@ async function refreshNodes() {
         <td>${coverageBar(n)}</td>
         <td><div class="actions-cell">
           <button class="btn btn-ghost btn-sm" data-action="edit-node" data-id="${n.id}">Editar</button>
-          ${!n.enabled ? `<button class="btn btn-success btn-sm" data-action="reactivate-node" data-id="${n.id}">Reactivar</button>` : ''}
           ${n.isOfficial
             ? '<span class="btn btn-ghost btn-sm" style="opacity:.55;cursor:not-allowed" title="Los nodos oficiales no se pueden eliminar">🔒 No eliminar</span>'
             : `<button class="btn btn-danger btn-sm" data-action="del-node" data-id="${n.id}">Eliminar</button>`}
@@ -971,7 +979,11 @@ function refreshTab(tab) {
     if (tab === 'market') return refreshMarket(true);
     if (tab === 'coins') return refreshCustomCoins();
     if (tab === 'apikey') return refreshApiKey();
+    if (tab === 'appupdate') return refreshAppUpdate();
     if (tab === 'notifications') return refreshNotifications();
+    if (tab === 'security') { refresh2faStatus(); refreshSessions(); refreshLoginHistory(); refreshDevices(); return Promise.resolve(); }
+    if (tab === 'protection') return refreshProtection();
+    if (tab === 'blocklist') return refreshBlocklist();
     return Promise.resolve();
   });
 }
@@ -1128,14 +1140,6 @@ document.addEventListener('DOMContentLoaded', () => {
         await api(`/api/v1/nodes/${id}`, { method: 'DELETE' });
         toast('Nodo eliminado.');
         refreshNodes();
-      } else if (action === 'reactivate-node') {
-        try {
-          const result = await api(`/api/v1/nodes/${id}/reactivate`, { method: 'POST', body: '{}' });
-          toast(`Nodo ${result.node?.name || id} reactivado (${Math.round(result.node?.latencyMs || 0)} ms)`);
-          refreshNodes();
-        } catch (err) {
-          toast(err.message, true);
-        }
       } else if (action === 'toggle-coin') {
         await api(`/api/v1/admin/coins/custom/${id}/toggle`, {
           method: 'POST', body: JSON.stringify({ enabled: el.dataset.enabled !== '1' }),
@@ -1166,10 +1170,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
   $('node-form').addEventListener('submit', async (e) => {
     e.preventDefault();
-    const submitBtn = $('node-form').querySelector('button[type=submit]');
-    const oldText = submitBtn.textContent;
-    submitBtn.disabled = true;
-    submitBtn.textContent = 'Validando y probando...';
     try {
       const payload = {
         symbol: $('n-symbol').value.trim().toUpperCase(),
@@ -1181,21 +1181,17 @@ document.addEventListener('DOMContentLoaded', () => {
         isDefault: $('n-default').checked,
         autoSwitch: $('n-autoswitch').checked,
       };
-      let result;
       if (editingNodeId) {
-        result = await api(`/api/v1/nodes/${editingNodeId}`, { method: 'PUT', body: JSON.stringify(payload) });
-        toast('Nodo actualizado' + (result.latencyMs ? ` (${Math.round(result.latencyMs)} ms)` : ''));
+        await api(`/api/v1/nodes/${editingNodeId}`, { method: 'PUT', body: JSON.stringify(payload) });
+        toast('Nodo actualizado');
       } else {
-        result = await api('/api/v1/nodes', { method: 'POST', body: JSON.stringify(payload) });
-        toast('Nodo agregado' + (result.latencyMs ? ` (${Math.round(result.latencyMs)} ms)` : ''));
+        await api('/api/v1/nodes', { method: 'POST', body: JSON.stringify(payload) });
+        toast('Nodo agregado');
       }
       resetNodeForm();
       refreshNodes();
     } catch (err) {
       toast(err.message, true);
-    } finally {
-      submitBtn.disabled = false;
-      submitBtn.textContent = oldText;
     }
   });
 
@@ -1303,8 +1299,294 @@ document.addEventListener('DOMContentLoaded', () => {
     $(id).addEventListener('input', () => updateConversion().catch(() => {}));
   });
 
+  $('save-app-update').addEventListener('click', async () => {
+    try {
+      const version = $('au-version').value.trim();
+      const apkUrl = $('au-apk-url').value.trim();
+      const apkMirrorUrl = $('au-apk-mirror').value.trim();
+      const exeUrl = $('au-exe-url').value.trim();
+      const exeMirrorUrl = $('au-exe-mirror').value.trim();
+      const r = await api('/api/v1/settings/app-update', {
+        method: 'POST', body: JSON.stringify({ version, apkUrl, apkMirrorUrl, exeUrl, exeMirrorUrl }),
+      });
+      $('app-update-status').textContent = version
+        ? `Guardado: aviso "Nueva versión disponible (${version})" activo.`
+        : 'Guardado: aviso desactivado.';
+      toast('Actualización guardada.');
+    } catch (err) {
+      toast(err.message, true);
+    }
+  });
+
   $('notif-send').addEventListener('click', sendNotification);
 
+  // ============================================================
+  // SEGURIDAD: 2FA, sesiones, historial, rotación API key, dispositivos
+  // ============================================================
+  async function refresh2faStatus() {
+    try {
+      const r = await api('/api/v1/admin/2fa/status');
+      if (r.enabled) {
+        $('2fa-status').innerHTML = '<span style="color:var(--green)">✅ 2FA activo</span>';
+        $('2fa-setup').style.display = 'none';
+        $('2fa-active').style.display = 'block';
+      } else {
+        $('2fa-status').innerHTML = '<span style="color:var(--warn)">⚠️ 2FA no activo — el panel solo se protege con contraseña</span>';
+        $('2fa-setup').style.display = 'block';
+        $('2fa-active').style.display = 'none';
+      }
+    } catch (e) {
+      $('2fa-status').textContent = 'Error al cargar estado 2FA';
+    }
+  }
+
+  $('2fa-generate').addEventListener('click', async () => {
+    try {
+      const r = await api('/api/v1/admin/2fa/setup', { method: 'POST', body: '{}' });
+      $('2fa-secret').textContent = `Secreto: ${r.secret}`;
+      $('2fa-backup-codes').innerHTML = `<b>Códigos de respaldo (guárdalos):</b><br>${r.backupCodes.join(' · ')}`;
+      // Generar QR como URI otpauth
+      const qrDiv = $('2fa-qr');
+      qrDiv.innerHTML = `<p class="hint">Escanea con Google Authenticator o Authy:</p>
+        <div style="background:#fff;padding:16px;border-radius:8px;display:inline-block;margin-top:8px">
+          <code style="font-size:11px;word-break:break-all;color:#333">${r.otpauthUri}</code>
+        </div>`;
+      toast('Secreto generado. Escanea el QR y verifica con el código.');
+    } catch (e) { toast(e.message, true); }
+  });
+
+  $('2fa-verify-btn').addEventListener('click', async () => {
+    try {
+      const code = $('2fa-verify-code').value.trim();
+      await api('/api/v1/admin/2fa/verify', { method: 'POST', body: JSON.stringify({ code }) });
+      toast('2FA activado correctamente');
+      refresh2faStatus();
+    } catch (e) { toast(e.message, true); }
+  });
+
+  $('2fa-disable-btn').addEventListener('click', async () => {
+    try {
+      const code = $('2fa-disable-code').value.trim();
+      await api('/api/v1/admin/2fa/disable', { method: 'POST', body: JSON.stringify({ code }) });
+      toast('2FA desactivado');
+      refresh2faStatus();
+    } catch (e) { toast(e.message, true); }
+  });
+
+  async function refreshSessions() {
+    try {
+      const r = await api('/api/v1/admin/sessions');
+      const el = $('sessions-list');
+      if (!r.sessions?.length) { el.innerHTML = '<p class="hint">No hay sesiones activas</p>'; return; }
+      el.innerHTML = r.sessions.map(s => `
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border)">
+          <div>
+            <strong>${s.tokenPreview}</strong>
+            <span class="hint"> — IP: ${s.ip || '?'} — ${s.userAgent?.slice(0,40) || '?'} — Creada: ${s.createdAt}</span>
+          </div>
+        </div>`).join('');
+    } catch (e) {}
+  }
+
+  $('revoke-all-sessions').addEventListener('click', async () => {
+    if (!confirm('Cerrar todas las demás sesiones?')) return;
+    try {
+      const r = await api('/api/v1/admin/sessions/revoke-all', { method: 'POST', body: '{}' });
+      toast(`${r.revoked} sesiones cerradas`);
+      refreshSessions();
+    } catch (e) { toast(e.message, true); }
+  });
+
+  async function refreshLoginHistory() {
+    try {
+      const r = await api('/api/v1/admin/login-history?limit=30');
+      const stats = await api('/api/v1/admin/login-stats');
+      $('login-stats').textContent = `Total: ${stats.total} | Fallidos: ${stats.failed} | Última hora: ${stats.failedLastHour}`;
+      $('login-history-list').innerHTML = (r.events || []).map(e => `
+        <div style="padding:4px 0;border-bottom:1px solid var(--border);font-size:13px">
+          <span style="color:${e.success ? 'var(--green)' : 'var(--danger)'}">${e.success ? '✅' : '❌'}</span>
+          ${e.ip} — ${e.userAgent?.slice(0,30) || '?'} — ${e.note || ''} — ${e.createdAt}
+        </div>`).join('');
+    } catch (e) {}
+  }
+
+  $('load-login-history').addEventListener('click', refreshLoginHistory);
+
+  async function refreshDevices() {
+    try {
+      const r = await api('/api/v1/admin/devices');
+      const el = $('devices-list');
+      if (!r.devices?.length) { el.innerHTML = '<p class="hint">No hay dispositivos registrados</p>'; return; }
+      el.innerHTML = r.devices.map(d => `
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border)">
+          <div>
+            <strong>${d.deviceName || 'Desconocido'}</strong>
+            <span class="hint"> — IP: ${d.ip} — Último uso: ${d.lastUsedAt} — ${d.revoked ? '<span style="color:var(--danger)">REVOGADO</span>' : 'Activo'}</span>
+          </div>
+          ${!d.revoked ? `<button class="btn btn-danger btn-sm" onclick="revokeDevice('${d.token}')">Revocar</button>` : ''}
+        </div>`).join('');
+    } catch (e) {}
+  }
+
+  window.revokeDevice = async (token) => {
+    try {
+      await api('/api/v1/admin/devices/revoke', { method: 'POST', body: JSON.stringify({ token }) });
+      toast('Dispositivo revocado');
+      refreshDevices();
+    } catch (e) { toast(e.message, true); }
+  };
+
+  $('rotate-api-key').addEventListener('click', async () => {
+    try {
+      const graceMinutes = Number($('rotate-grace-minutes').value) || 60;
+      const r = await api('/api/v1/settings/api-key/rotate', { method: 'POST', body: JSON.stringify({ graceMinutes }) });
+      $('rotate-result').innerHTML = `<b>Nueva key:</b> ${r.apiKey}<br><b>Key anterior válida hasta:</b> ${r.previousKeyValidUntil}<br><span style="color:var(--warn)">${r.message}</span>`;
+      toast('API key rotada. Actualiza la app antes de que venza la gracia.');
+    } catch (e) { toast(e.message, true); }
+  });
+
+  // ============================================================
+  // PROTECCIÓN AUTÓNOMA
+  // ============================================================
+  async function refreshProtection() {
+    try {
+      const s = await api('/api/v1/admin/protection/settings');
+      $('prot-enabled').checked = s.protectionEnabled === '1';
+      $('prot-lowbalance').checked = s.lowBalanceEnabled === '1';
+      $('prot-volatility').checked = s.volatilityEnabled === '1';
+      $('prot-autopause-reserve').checked = s.autoPauseOnReserveLow === '1';
+      $('prot-autopause-volatility').checked = s.autoPauseOnVolatility === '1';
+      $('prot-autopause-suspicious').checked = s.autoPauseOnSuspiciousActivity === '1';
+      $('prot-btc').value = s.lowBalanceThresholdBTC || 0.01;
+      $('prot-eth').value = s.lowBalanceThresholdETH || 0.1;
+      $('prot-sol').value = s.lowBalanceThresholdSOL || 1;
+      $('prot-xmr').value = s.lowBalanceThresholdXMR || 0.5;
+      $('prot-vol-pct').value = s.volatilityThresholdPct || 5;
+      $('prot-vol-window').value = s.volatilityWindowSec || 60;
+      $('prot-rate-limit').value = s.suspiciousRateLimit || 5;
+    } catch (e) {}
+    // Paused
+    try {
+      const p = await api('/api/v1/admin/protection/paused');
+      $('paused-list').innerHTML = (p.paused || []).length === 0
+        ? '<p class="hint">No hay monedas pausadas</p>'
+        : p.paused.map(x => `<div style="padding:6px 0;border-bottom:1px solid var(--border)">
+            <strong>${x.symbol}</strong> — ${x.reason} — Expira: ${x.expiresAt}
+            <button class="btn btn-ghost btn-sm" onclick="resumeSymbol('${x.symbol}')" style="margin-left:8px">Reanudar</button>
+          </div>`).join('');
+    } catch (e) {}
+    // Alerts
+    try {
+      const a = await api('/api/v1/admin/protection/alerts');
+      $('alerts-list').innerHTML = (a.unresolved || []).length === 0
+        ? '<p class="hint">No hay alertas activas ✅</p>'
+        : a.unresolved.map(x => `<div style="padding:6px 0;border-bottom:1px solid var(--border);border-left:3px solid ${x.severity==='critical'?'var(--danger)':'var(--warn)'};padding-left:8px">
+            <strong>${x.type}</strong> — ${x.message}
+            <button class="btn btn-ghost btn-sm" onclick="resolveAlert(${x.id})" style="margin-left:8px">Resolver</button>
+          </div>`).join('');
+    } catch (e) {}
+  }
+
+  window.resumeSymbol = async (symbol) => {
+    try {
+      await api('/api/v1/admin/protection/resume', { method: 'POST', body: JSON.stringify({ symbol }) });
+      toast(`${symbol} reanudado`);
+      refreshProtection();
+    } catch (e) { toast(e.message, true); }
+  };
+
+  window.resolveAlert = async (id) => {
+    try {
+      await api(`/api/v1/admin/protection/alerts/${id}/resolve`, { method: 'POST', body: '{}' });
+      refreshProtection();
+    } catch (e) { toast(e.message, true); }
+  };
+
+  $('resolve-all-alerts').addEventListener('click', async () => {
+    try {
+      await api('/api/v1/admin/protection/alerts/resolve-all', { method: 'POST', body: '{}' });
+      toast('Todas las alertas resueltas');
+      refreshProtection();
+    } catch (e) { toast(e.message, true); }
+  });
+
+  $('save-protection').addEventListener('click', async () => {
+    try {
+      await api('/api/v1/admin/protection/settings', {
+        method: 'POST',
+        body: JSON.stringify({
+          protectionEnabled: $('prot-enabled').checked ? '1' : '0',
+          lowBalanceEnabled: $('prot-lowbalance').checked ? '1' : '0',
+          volatilityEnabled: $('prot-volatility').checked ? '1' : '0',
+          autoPauseOnReserveLow: $('prot-autopause-reserve').checked ? '1' : '0',
+          autoPauseOnVolatility: $('prot-autopause-volatility').checked ? '1' : '0',
+          autoPauseOnSuspiciousActivity: $('prot-autopause-suspicious').checked ? '1' : '0',
+          lowBalanceThresholdBTC: $('prot-btc').value,
+          lowBalanceThresholdETH: $('prot-eth').value,
+          lowBalanceThresholdSOL: $('prot-sol').value,
+          lowBalanceThresholdXMR: $('prot-xmr').value,
+          volatilityThresholdPct: $('prot-vol-pct').value,
+          volatilityWindowSec: $('prot-vol-window').value,
+          suspiciousRateLimit: $('prot-rate-limit').value,
+        }),
+      });
+      toast('Configuración de protección guardada');
+    } catch (e) { toast(e.message, true); }
+  });
+
+  $('manual-pause-btn').addEventListener('click', async () => {
+    try {
+      const symbol = $('manual-pause-symbol').value.trim();
+      const durationMs = ($('manual-pause-duration').value || 60) * 60 * 1000;
+      await api('/api/v1/admin/protection/pause', { method: 'POST', body: JSON.stringify({ symbol, durationMs }) });
+      toast(`${symbol} pausado`);
+      refreshProtection();
+    } catch (e) { toast(e.message, true); }
+  });
+
+  // ============================================================
+  // BLOCKLIST
+  // ============================================================
+  async function refreshBlocklist() {
+    try {
+      const r = await api('/api/v1/admin/blocklist');
+      const el = $('bl-list');
+      if (!r.entries?.length) { el.innerHTML = '<p class="hint">No hay direcciones bloqueadas</p>'; return; }
+      el.innerHTML = r.entries.map(e => `
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border)">
+          <div>
+            <code>${e.address}</code>
+            <span class="hint"> — ${e.reason || 'Sin motivo'} — ${e.source} — ${e.addedAt}</span>
+          </div>
+          <button class="btn btn-danger btn-sm" onclick="removeFromBlocklist('${e.address}')">Eliminar</button>
+        </div>`).join('');
+    } catch (e) {}
+  }
+
+  $('bl-add').addEventListener('click', async () => {
+    try {
+      const address = $('bl-address').value.trim();
+      const reason = $('bl-reason').value.trim();
+      if (!address) { toast('Ingresa una dirección', true); return; }
+      await api('/api/v1/admin/blocklist', { method: 'POST', body: JSON.stringify({ address, reason }) });
+      $('bl-address').value = '';
+      $('bl-reason').value = '';
+      toast('Dirección bloqueada');
+      refreshBlocklist();
+    } catch (e) { toast(e.message, true); }
+  });
+
+  window.removeFromBlocklist = async (address) => {
+    try {
+      await api(`/api/v1/admin/blocklist/${encodeURIComponent(address)}`, { method: 'DELETE' });
+      toast('Dirección eliminada de la blocklist');
+      refreshBlocklist();
+    } catch (e) { toast(e.message, true); }
+  };
+
+  // ============================================================
+  // Auto-refresh de pestañas de seguridad/protección
+  // ============================================================
   if (token) {
     showApp();
   } else {

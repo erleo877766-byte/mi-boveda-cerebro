@@ -377,11 +377,11 @@ function networkRowHTML(symbol, network, r) {
         <span class="net-balance">${balanceText}</span>
       </div>
       <div class="net-fields">
-        <label class="field"><span>Cobro de comisión</span>
-          <input class="input net-in" data-f="address" value="${val('address')}" placeholder="Donde llegan tus comisiones">
+        <label class="field"><span>Tu dirección de COBRO (aquí entra el dinero)</span>
+          <input class="input net-in" data-f="address" value="${val('address')}" placeholder="Tu dirección de esta moneda/red — el usuario te envía aquí">
         </label>
-        <label class="field"><span>Dirección de reserva — Envíos manuales</span>
-          <input class="input net-in" data-f="payoutAddress" value="${val('payoutAddress')}" placeholder="Desde dónde envías al usuario">
+        <label class="field"><span>Dirección de RESERVA (de aquí pagas al usuario)</span>
+          <input class="input net-in" data-f="payoutAddress" value="${val('payoutAddress')}" placeholder="De dónde sale la moneda que le envías al usuario">
         </label>
       </div>
       <div class="net-actions">
