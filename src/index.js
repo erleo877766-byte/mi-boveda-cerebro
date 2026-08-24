@@ -118,8 +118,12 @@ app.get('/dl/:file', dlLimiter, async (req, res) => {
   }
 });
 
-// Dashboard web estatico.
-app.use(express.static(path.join(__dirname, '..', 'public')));
+// Dashboard web estatico (sin cache: el panel siempre muestra la ultima version).
+app.use(express.static(path.join(__dirname, '..', 'public'), {
+  etag: false,
+  lastModified: false,
+  setHeaders: (res) => res.setHeader('Cache-Control', 'no-store'),
+}));
 
 // ============================================================
 // Primer arranque: crear esquema y claves si no existen.
