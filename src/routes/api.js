@@ -816,7 +816,7 @@ router.get('/admin/coins/custom', sessionAuth, async (req, res) => {
 
 router.post('/admin/coins/custom', sessionAuth, async (req, res) => {
   const symCheck = String(req.body?.symbol || '').toUpperCase().trim();
-  if (symCheck && ordersService.SUPPORTED_SYMBOLS.includes(symCheck)) {
+  if (symCheck && ordersService.SUPPORTED_SYMBOLS.has(symCheck)) {
     return res.status(400).json({ error: `La moneda ${symCheck} ya existe como moneda nativa.` });
   }
   const result = await customCoinsService.createCustomCoin(req.body || {});
@@ -836,7 +836,7 @@ router.post('/admin/coins/custom', sessionAuth, async (req, res) => {
 
 router.put('/admin/coins/custom/:id', sessionAuth, async (req, res) => {
   const symCheck = String(req.body?.symbol || '').toUpperCase().trim();
-  if (symCheck && ordersService.SUPPORTED_SYMBOLS.includes(symCheck)) {
+  if (symCheck && ordersService.SUPPORTED_SYMBOLS.has(symCheck)) {
     return res.status(400).json({ error: `La moneda ${symCheck} ya existe como moneda nativa.` });
   }
   const result = await customCoinsService.updateCustomCoin(req.params.id, req.body || {});
