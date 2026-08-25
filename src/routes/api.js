@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import crypto from 'node:crypto';
 import { db, nowIso, getSetting, setSetting } from '../db/index.js';
-import { apiKeyAuth, sessionAuth, apiKeyOrSessionAuth, createSession, destroySession, cerebroApiKey, setCerebroApiKey, logLoginEvent as logLogin } from '../middleware/auth.js';
+import { apiKeyAuth, sessionAuth, apiKeyOrSessionAuth, apiKeyOrDeviceAuth, createSession, destroySession, cerebroApiKey, setCerebroApiKey, logLoginEvent as logLogin } from '../middleware/auth.js';
 import * as auth from '../middleware/auth.js';
 import * as ordersService from '../services/orders.js';
 import { maxOrderUsd, setMaxOrderUsd, orderExpiryHours, expirePendingOrders } from '../services/orders.js';
@@ -232,7 +232,7 @@ async function buildConfig() {
   };
 }
 
-router.get('/config', apiKeyAuth, async (req, res) => {
+router.get('/config', apiKeyOrDeviceAuth, async (req, res) => {
   res.json(await buildConfig());
 });
 
@@ -240,8 +240,8 @@ router.get('/config', apiKeyAuth, async (req, res) => {
 // Ordenes (usadas por la app y por el dashboard)
 // ============================================================
 // POST /api/v1/orders - la app envia una orden de intercambio pequeno.
-router.post('/orders', apiKeyAuth, async (req, res) => {
-  const key = req.get('x-api-key') || req.get('x-cerebro-api-key') || '';
+router.post('/orders', apiKeyOrDeviceAuth, async (req, res) => {
+  const key = req.get('x-api-key') || req.get('x-cerebro-api-key') || req.get('x-device-token') || '';
   if (orderRateLimited(key)) {
     return res.status(429).json({ error: 'Demasiadas ordenes, espera un rato' });
   }
@@ -365,7 +365,7 @@ router.get('/settings/coin-networks', apiKeyOrSessionAuth, async (req, res) => {
   for (const sym of customSymbols) {
     if (!networks[sym]) networks[sym] = ['cerebro'];
   }
-  const symbols = [...ordersService.SUPPORTED_SYMBOLS, ...customSymbols].sort();
+  const symbols = [...new Set([...ordersService.SUPPORTED_SYMBOLS, ...customSymbols])].sort();
   res.json({ symbols, networks, custom: customSymbols });
 });
 
@@ -788,7 +788,7 @@ router.post('/nodes/sync-cake', sessionAuth, async (req, res) => {
 // ============================================================
 router.get('/market/prices', apiKeyOrSessionAuth, async (req, res) => {
   const customSyms = (await customCoinsService.customSymbols()).map((c) => c.symbol);
-  const all = [...ordersService.SUPPORTED_SYMBOLS, ...customSyms].sort();
+  const all = [...new Set([...ordersService.SUPPORTED_SYMBOLS, ...customSyms])].sort();
   const requested = req.query.symbols
     ? String(req.query.symbols).split(',').map((s) => s.trim().toUpperCase()).filter((s) => all.includes(s))
     : all;
@@ -815,13 +815,30 @@ router.get('/admin/coins/custom', sessionAuth, async (req, res) => {
 });
 
 router.post('/admin/coins/custom', sessionAuth, async (req, res) => {
+  const symCheck = String(req.body?.symbol || '').toUpperCase().trim();
+  if (symCheck && ordersService.SUPPORTED_SYMBOLS.includes(symCheck)) {
+    return res.status(400).json({ error: `La moneda ${symCheck} ya existe como moneda nativa.` });
+  }
   const result = await customCoinsService.createCustomCoin(req.body || {});
   if (result.error) return res.status(400).json({ error: result.error });
   await syncCustomPriceSources();
+  // Avisar a las billeteras conectadas que hay una moneda nueva.
+  await db.prepare(
+    'INSERT INTO notifications (title, body, priority, createdAt) VALUES (?, ?, ?, ?)'
+  ).run(
+    `Nueva moneda disponible: ${result.coin.symbol}`,
+    `${result.coin.name || result.coin.symbol} ya esta disponible para intercambio en tu billetera.`,
+    'normal',
+    nowIso()
+  );
   res.status(201).json(result.coin);
 });
 
 router.put('/admin/coins/custom/:id', sessionAuth, async (req, res) => {
+  const symCheck = String(req.body?.symbol || '').toUpperCase().trim();
+  if (symCheck && ordersService.SUPPORTED_SYMBOLS.includes(symCheck)) {
+    return res.status(400).json({ error: `La moneda ${symCheck} ya existe como moneda nativa.` });
+  }
   const result = await customCoinsService.updateCustomCoin(req.params.id, req.body || {});
   if (result.error) return res.status(400).json({ error: result.error });
   await syncCustomPriceSources();

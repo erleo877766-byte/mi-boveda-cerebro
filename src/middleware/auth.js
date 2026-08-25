@@ -204,6 +204,16 @@ export async function apiKeyOrSessionAuth(req, res, next) {
   return sessionAuth(req, res, next);
 }
 
+// Auth para endpoints usados por la billetera: acepta x-api-key O
+// x-device-token. La wallet registra un device token y después envía
+// SOLO ese token; sin esto /config y POST /orders devuelven 401 eterno.
+export async function apiKeyOrDeviceAuth(req, res, next) {
+  const hasKey = req.get('x-api-key') || req.get('x-cerebro-api-key');
+  if (hasKey) return apiKeyAuth(req, res, next);
+  if (req.get('x-device-token')) return deviceTokenAuth(req, res, next);
+  return res.status(401).json({ error: 'Unauthorized' });
+}
+
 // ============================================================
 // Sesiones admin: crear / destruir / listar / device tracking
 // ============================================================

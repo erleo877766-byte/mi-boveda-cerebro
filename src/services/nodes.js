@@ -25,6 +25,21 @@ export function validateNodeUrl(rawUri) {
   const uri = String(rawUri || '').trim();
   if (!uri) return { valid: false, error: 'URI vacia' };
 
+  // Formato Electrum: host:puerto sin esquema (ej. electrum.blockstream.info:50002).
+  // Se guarda TAL CUAL: anteponer https:// rompe los clientes Electrum.
+  if (!uri.startsWith('http://') && !uri.startsWith('https://') && uri.includes(':')) {
+    const parts = uri.split(':');
+    const host = parts[0];
+    const port = Number(parts[1]);
+    if (!host || host.length < 2 || /\s/.test(host) || parts.length !== 2) {
+      return { valid: false, error: 'URL invalida: formato incorrecto' };
+    }
+    if (!Number.isInteger(port) || port < 1 || port > 65535) {
+      return { valid: false, error: 'URL invalida: puerto incorrecto' };
+    }
+    return { valid: true, normalized: uri, hostname: host, port: String(port) };
+  }
+
   let parsed;
   try {
     parsed = new URL(uri.startsWith('http') ? uri : 'https://' + uri);
