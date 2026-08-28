@@ -6,7 +6,9 @@ import * as auth from '../middleware/auth.js';
 import * as ordersService from '../services/orders.js';
 import { maxOrderUsd, setMaxOrderUsd, orderExpiryHours, expirePendingOrders } from '../services/orders.js';
 import * as reportsService from '../services/reports.js';
-import { NORMAL_COMMISSION, commissionUsdFor, specialCommissionFor, commissionPercent, setCommissionPercent, commissionUsdAll, setCommissionUsdAll, coinCommissionPercent, coinCommissionsAll, setCoinCommission } from '../services/commission.js';
+import { NORMAL_COMMISSION, commissionUsdFor, specialCommissionFor, commissionPercent, setCommissionPercent, commissionUsdAll, setCommissionUsdAll, coinCommissionPercent, coinCommissionsAll, setCoinCommission, commissionPctAll, setCommissionPctBySpeed, resetCommissionPctBySpeed } from '../services/commission.js';
+import { setOwnerAddresses, ownerAddresses, isAdminOrOwnerAddress } from '../services/commission.js';
+import { statusPerCoin, withdrawGain, withdrawalHistory } from '../services/earnings.js';
 import * as nodesService from '../services/nodes.js';
 import * as balanceService from '../services/balance.js';
 import { syncCakeNodes } from '../services/cakeNodes.js';
@@ -177,6 +179,8 @@ async function buildConfig() {
 
   const percent = await commissionPercent();
   const usdComms = await commissionUsdAll();
+  // Reparto por velocidad del global (Lento 50% / Normal 75% / Rapido 100%).
+  const pctSpeed = await commissionPctAll();
 
   // Nodos: la app NO tiene lista propia, el Cerebro es el unico que la tiene.
   const allNodes = await nodesService.listNodes({ enabledOnly: true });
@@ -213,6 +217,12 @@ async function buildConfig() {
     commissionMediumUsd: usdComms.medium,
     commissionFastUsd: usdComms.fast,
     commissionPercent: percent,
+    commissionBySpeed: {
+      global: pctSpeed.global,
+      slow: pctSpeed.slow,
+      medium: pctSpeed.medium,
+      fast: pctSpeed.fast,
+    },
     adminCommissionExemption: true,
     minAppVersion: 0,
     coins,
@@ -279,6 +289,16 @@ router.post('/orders', apiKeyOrDeviceAuth, async (req, res) => {
   const result = await ordersService.createOrder(req.body || {});
   if (result.error) return res.status(400).json({ error: result.error });
   res.status(201).json(result.order);
+});
+
+// POST /api/v1/orders/check-liquidity - la app consulta ANTES de aceptar si la
+// reserva del admin tiene saldo para entregar el monto destino.
+// body: { toSymbol, toAmount, toNetwork? }
+router.post('/orders/check-liquidity', apiKeyOrDeviceAuth, async (req, res) => {
+  const { toSymbol, toAmount, toNetwork } = req.body || {};
+  const r = await ordersService.checkLiquidity(toSymbol, toAmount, toNetwork);
+  if (r.error && r.sufficient === false) return res.status(200).json(r);
+  res.json(r);
 });
 
 // GET /api/v1/orders/:id - la app consulta estado (pending/approved/rejected/completed).
@@ -382,6 +402,81 @@ router.post('/settings/commission-percent', sessionAuth, async (req, res) => {
   if (result.error) return res.status(400).json({ error: result.error });
   res.json(result);
 });
+
+// Porcentaje GLOBAL BASE -> Lento/Normal/Rapido (Lento 50 / Normal 75 / Rapido 100).
+// GET devuelve el global + los 3 niveles calculados (con overrides manuales aplicados).
+router.get('/settings/commission-by-speed', apiKeyOrSessionAuth, async (req, res) => {
+  res.json(await commissionPctAll());
+});
+
+// POST guarda el override manual de UN nivel (valida que no supere el global).
+// body: { speed: 'slow'|'medium'|'fast', percent: Number }
+router.post('/settings/commission-by-speed', sessionAuth, async (req, res) => {
+  const { speed, percent } = req.body || {};
+  const r = await setCommissionPctBySpeed(String(speed), percent);
+  if (r.error) return res.status(400).json(r);
+  res.json(r);
+});
+
+// DELETE vuelve los 3 niveles al reparto automatico del global (sin overrides).
+router.delete('/settings/commission-by-speed', sessionAuth, async (req, res) => {
+  res.json(await resetCommissionPctBySpeed());
+});
+
+// Direcciones de reconocimiento del admin (para cobrar CERO comision).
+router.get('/settings/owner-addresses', apiKeyOrSessionAuth, async (req, res) => {
+  res.json(await ownerAddresses());
+});
+
+// body: { BTC: ['bc1q...', ...], XMR: '...', ... }
+router.post('/settings/owner-addresses', sessionAuth, async (req, res) => {
+  const r = await setOwnerAddresses(req.body);
+  if (r.error) return res.status(400).json(r);
+  res.json(r);
+});
+
+// ============================================================
+// GANANCIAS del admin + retiro a cuenta principal (sin costo)
+// ============================================================
+// Estado por moneda: reserva (on-chain en lo posible, con manual como fallback)
+// + ganancia acumulada retirable + disponible.
+router.get('/earnings/status', apiKeyOrSessionAuth, async (req, res) => {
+  const rows = await db.prepare('SELECT * FROM coin_addresses WHERE enabled = 1').all();
+  const persisted = {};
+  for (const r of rows) {
+    if (r.network !== '') continue;
+    let reserve = Number(r.balance) || 0;
+    try {
+      if (r.payoutAddress) reserve = await balanceService.availableBalance(r.symbol, r.payoutAddress, reserve);
+    } catch { /* mantiene fallback manual */ }
+    persisted[r.symbol] = { reserve };
+  }
+  const status = await statusPerCoin(persisted);
+  res.json({ coins: status, updatedAt: new Date().toISOString() });
+});
+
+// Retira la ganancia acumulada de una moneda a la cuenta principal del admin.
+// Query: ?symbol=BTC&to=bc1q_admin (opcional) — si no se pasa 'to', se usa la
+// direccion de pago de la moneda configurada.
+router.post('/earnings/withdraw', sessionAuth, async (req, res) => {
+  const { symbol, to } = req.body || {};
+  let toAddress = String(to || '').trim();
+  if (!toAddress) {
+    const row = await db
+      .prepare('SELECT payoutAddress AS addr FROM coin_addresses WHERE symbol = ? AND network = ?')
+      .get(String(symbol || '').toUpperCase(), '');
+    toAddress = row && row.addr ? row.addr : '';
+  }
+  const r = await withdrawGain(symbol, { toAddress });
+  if (r.error) return res.status(400).json(r);
+  res.json(r);
+});
+
+// Historial de retiros de ganancias.
+router.get('/earnings/withdrawals', apiKeyOrSessionAuth, async (req, res) => {
+  res.json({ withdrawals: await withdrawalHistory({ limit: 200 }) });
+});
+
 
 // Comision en USD configurable por velocidad (Lento/Normal/Rapido).
 router.get('/settings/commissions-usd', apiKeyOrSessionAuth, async (req, res) => {

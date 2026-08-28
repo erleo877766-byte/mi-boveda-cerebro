@@ -273,6 +273,38 @@ export async function tryAutoApprove(orderId) {
   return approveOrder(orderId, { checkBalance: true });
 }
 
+// ============================================================
+// CHECK DE LIQUIDEZ (antes de aceptar un intercambio)
+// La app consulta si la reserva del admin puede cubrir la entrega ANTES de
+// pedir confirmacion. Devuelve el saldo real de reserva del destino y si
+// alcanza para el monto que hay que entregar (toAmount).
+// En coins sin nodo, usa el balance manual configurado como fallback.
+// ============================================================
+export async function checkLiquidity(toSymbol, toAmount, toNetwork = '') {
+  const sym = String(toSymbol || '').toUpperCase();
+  const amount = Number(toAmount) || 0;
+  if (!sym || amount <= 0) return { error: 'monto invalido', sufficient: false };
+
+  const reserve = await db
+    .prepare('SELECT * FROM coin_addresses WHERE symbol = ? AND network = ?')
+    .get(sym, String(toNetwork || ''));
+  if (!reserve || !reserve.address) {
+    return { error: `no hay reserva configurada para ${sym}`, sufficient: false, available: 0, required: amount };
+  }
+  const payoutAddr = (reserve.payoutAddress || reserve.address || '').trim();
+  const manualBalance = reserve.balance != null ? Number(reserve.balance) : 0;
+  const { available = 0, source = 'manual' } = await availableBalance(sym, payoutAddr, manualBalance);
+
+  return {
+    symbol: sym,
+    available,
+    required: amount,
+    sufficient: available >= amount,
+    balanceSource: source,
+    enabled: reserve.enabled === 1,
+  };
+}
+
 // Limpiar el historial: borra solo las ordenes ya terminadas (completed,
 // rejected, cancelled) y sus eventos. Nunca toca pending ni approved.
 export async function clearOrderHistory() {
@@ -346,6 +378,34 @@ async function recordEvent(orderId, fromStatus, toStatus, note) {
     INSERT INTO order_events (orderId, fromStatus, toStatus, note, createdAt)
     VALUES (?, ?, ?, ?, ?)
   `).run(orderId, fromStatus, toStatus, note, nowIso());
+
+  // Notificación automática para el ciclo de la orden (Enviando/Esperando/
+  // Listo/Recibido/Cambiado/Falló). Se ignora silenciosamente cualquier error
+  // de inserción para no romper el flujo principal de la orden.
+  const notif = orderNotificationMessage(toStatus);
+  if (notif) {
+    try {
+      await db.prepare(
+        'INSERT INTO notifications (title, body, priority, createdAt) VALUES (?, ?, ?, ?)'
+      ).run(notif.title, notif.body, notif.priority, nowIso());
+    } catch (_) { /* no-op */ }
+  }
+}
+
+// Mensaje de notificación según el estado alcanzado por la orden.
+function orderNotificationMessage(status) {
+  switch (status) {
+    case 'pending':
+      return { title: '🔄 Esperando aprobación', body: 'Tu intercambio está en espera del Cerebro.', priority: 'normal' };
+    case 'approved':
+      return { title: '✅ Orden aprobada', body: 'Tu intercambio fue aprobado: enviando fondos.', priority: 'urgent' };
+    case 'completed':
+      return { title: '🎉 Intercambio completado', body: 'Recibiste tu cripto. ¡Listo y disponible!', priority: 'urgent' };
+    case 'rejected':
+      return { title: '❌ Intercambio rechazado', body: 'Tu orden fue rechazada. Revisa los detalles.', priority: 'critical' };
+    default:
+      return null;
+  }
 }
 
 export async function listOrders({ status, limit = 100 } = {}) {

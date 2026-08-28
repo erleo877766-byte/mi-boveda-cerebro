@@ -70,6 +70,7 @@
       <button class="tab" data-tab="reserves">Direcciones</button>
       <button class="tab" data-tab="coins">Monedas</button>
       <button class="tab" data-tab="settings">Comisiones</button>
+      <button class="tab" data-tab="earnings">Ganancias</button>
       <button class="tab" data-tab="nodes">Nodos</button>
       <button class="tab" data-tab="market">Mercado</button>
       <button class="tab" data-tab="notifications">Notificaciones</button>
@@ -169,6 +170,7 @@
         </div>
         <div class="form-row">
           <label class="field" style="flex:1"><span>Dirección de cobro de comisiones</span><input id="cc-fee" class="input mono" placeholder="donde te pagan"></label>
+          <label class="field" style="flex:1"><span>Dirección de reserva (donde el Cerebro guarda y envía)</span><input id="cc-reserve" class="input mono" placeholder="billetera de reserva de la moneda"></label>
         </div>
         <div class="form-row">
           <label class="field" style="flex:1"><span>Nodos (opcional)</span>
@@ -238,6 +240,60 @@
         </div>
         <div id="commission-status" class="hint" style="margin-top:12px"></div>
       </div>
+
+      <h3>Reparto por velocidad (Lento / Normal / Rápido)</h3>
+      <div class="card">
+        <p class="hint">Escribes UNA sola cifra tope (arriba, “Comisión porcentual global”). El sistema reparte los 3 niveles automáticamente: <b>Lento = 50%</b>, <b>Normal = 75%</b>, <b>Rápido = 100%</b>. Puedes sobrescribir un nivel aquí, pero <b>nunca podrá superar tu tope global</b>. Respeta decimales pequeños (0.001% → Lento 0.0005%).</p>
+        <div class="speed-config">
+          <div class="speed-config-row">
+            <span class="speed-icon">🐢</span>
+            <div style="flex:1">
+              <div class="speed-name">Lento</div>
+              <div class="speed-desc">50% del global</div>
+            </div>
+            <input id="pct-slow" type="number" step="any" min="0" class="input speed-input">
+            <span class="speed-usd">%</span>
+          </div>
+          <div class="speed-config-row">
+            <span class="speed-icon">🚶</span>
+            <div style="flex:1">
+              <div class="speed-name">Normal <span class="speed-default">(predeterminado)</span></div>
+              <div class="speed-desc">75% del global</div>
+            </div>
+            <input id="pct-medium" type="number" step="any" min="0" class="input speed-input">
+            <span class="speed-usd">%</span>
+          </div>
+          <div class="speed-config-row">
+            <span class="speed-icon">⚡</span>
+            <div style="flex:1">
+              <div class="speed-name">Rápido</div>
+              <div class="speed-desc">100% del global (tope)</div>
+            </div>
+            <input id="pct-fast" type="number" step="any" min="0" class="input speed-input">
+            <span class="speed-usd">%</span>
+          </div>
+        </div>
+        <div class="form-row" style="margin-top:18px">
+          <button id="save-commission-speed" class="btn btn-primary">Guardar reparto</button>
+          <button id="reset-commission-speed" class="btn btn-ghost">Restablecer 50/75/100</button>
+        </div>
+        <div id="commission-speed-status" class="hint" style="margin-top:12px"></div>
+      </div>
+    </section>
+
+    <!-- ============ GANANCIAS (Reserva activa vs Ganancia limpia) ============ -->
+    <section id="tab-earnings" class="tab-content">
+      <h2>Ganancias y Reserva</h2>
+      <p class="hint">Dos contadores separados: <b>Reserva activa</b> (liquidez en juego) y <b>Ganancia limpia</b> (comisiones acumuladas, retirables SIN costo a tu cuenta principal). Retirar mueve toda la ganancia y reinicia el contador, sin tocar la reserva.</p>
+      <div id="earnings-overview" class="earnings-overview"></div>
+      <div class="form-row" style="margin-top:16px">
+        <button id="withdraw-all-earnings" class="btn btn-warn">Retirar todas las ganancias</button>
+        <div id="earnings-status" class="hint" style="margin-top:12px"></div>
+      </div>
+      <h3>Ganancia por moneda</h3>
+      <div id="earnings-list" class="coin-grid"></div>
+      <h3>Historial de retiros</h3>
+      <div id="earnings-withdrawals"></div>
     </section>
 
     <!-- ============ NODOS ============ -->

@@ -279,6 +279,29 @@ CREATE TABLE IF NOT EXISTS erleo_transactions (
 );
 CREATE INDEX IF NOT EXISTS idx_erleo_tx_order ON erleo_transactions (orderId);
 CREATE INDEX IF NOT EXISTS idx_erleo_tx_status ON erleo_transactions (status);
+
+-- ============================================================
+-- GANANCIAS DEL ADMIN + RETIROS
+-- Ganancias = comisiones acumuladas por moneda (lo que le pertenece al admin
+-- sin tocar la liquidez/reserva). Los retiros descuentan la ganancia y dejan
+-- historial permanente. Cuenta separada de la liquidez/reserva activa.
+-- ============================================================
+CREATE TABLE IF NOT EXISTS earnings (
+  symbol TEXT PRIMARY KEY,
+  gain   REAL NOT NULL DEFAULT 0,   -- ganancia acumulada POR COBRAR (retirable)
+  reserved REAL NOT NULL DEFAULT 0  -- liquidez activa en juego (informacion)
+);
+
+CREATE TABLE IF NOT EXISTS earnings_withdrawals (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  symbol     TEXT NOT NULL,
+  amount     REAL NOT NULL,
+  toAddress  TEXT NOT NULL DEFAULT '',
+  txHash     TEXT NOT NULL DEFAULT '',
+  note       TEXT NOT NULL DEFAULT '',
+  createdAt  TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_earnings_withdrawals_symbol ON earnings_withdrawals (symbol);
 `);
 
   // Migraciones para tablas que ya existían sin columnas nuevas.

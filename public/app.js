@@ -548,6 +548,85 @@ async function refreshCommissions() {
       ? `Comisión actual: ${percent}% del intercambio. Se descuenta del monto que recibe el usuario.`
       : 'Comisión porcentual desactivada. Se usa la comisión fija por velocidad de arriba.';
   } catch (e) { /* silencioso */ }
+  try {
+    // Reparto por velocidad (Lento 50 / Normal 75 / Rapido 100 del global),
+    // incluye overrides manuales aplicados.
+    const pct = await api('/api/v1/settings/commission-by-speed');
+    if (pct && typeof pct === 'object') {
+      $('pct-slow').value = pct.slow;
+      $('pct-medium').value = pct.medium;
+      $('pct-fast').value = pct.fast;
+    }
+  } catch (e) { /* silencioso */ }
+}
+
+// ============================================================
+// Ganancias: Reserva activa vs Ganancia limpia + retiros
+// ============================================================
+async function refreshEarnings() {
+  try {
+    const data = await api('/api/v1/earnings/status');
+    const coins = Object.values(data.coins || {});
+    let totalReserve = 0, totalGain = 0, countGain = 0;
+    const rows = coins.map((c) => {
+      const reserve = Number(c.reserve) || 0;
+      const gain = Number(c.gain) || 0;
+      if (gain > 0) countGain++;
+      totalReserve += reserve;
+      totalGain += gain;
+      return `
+        <div class="coin-card">
+          <div class="coin-top">
+            <span class="coin-symbol">${esc(c.symbol)}</span>
+            <span class="badge">Ganancia</span>
+          </div>
+          <div class="coin-row"><span>Reserva activa</span><b>${fmtAmount(reserve)} ${esc(c.symbol)}</b></div>
+          <div class="coin-row"><span>Ganancia limpia</span><b style="color:var(--accent,#00c853)">${fmtAmount(gain)} ${esc(c.symbol)}</b></div>
+          ${gain > 0 ? `<button class="btn btn-warn btn-sm" data-earn-withdraw="${esc(c.symbol)}">Retirar</button>` : ''}
+        </div>`;
+    }).join('');
+
+    const overview = $('earnings-overview');
+    overview.innerHTML = `
+      <div class="earnings-card reserve-card">
+        <div class="earnings-label">Reserva activa (liquidez en juego)</div>
+        <div class="earnings-value">${coins.length ? '' : 'Sin monedas configuradas'}</div>
+      </div>
+      <div class="earnings-card gain-card">
+        <div class="earnings-label">Ganancia limpia acumulada (retirable sin costo)</div>
+        <div class="earnings-value">${fmtAmount(totalGain)} de ${countGain} moneda(s)</div>
+      </div>
+      <div class="earnings-card info-card">
+        <div class="earnings-label">Consejo</div>
+        <div class="earnings-sub">Retirar mueve TODA la ganancia a tu cuenta principal y reinicia el contador; la reserva queda intacta.</div>
+      </div>`;
+
+    $('earnings-list').innerHTML = rows || '<div class="empty"><span class="big">💼</span>Aún no hay ganancias acumuladas por moneda.</div>';
+
+    const wd = await api('/api/v1/earnings/withdrawals');
+    const list = (wd.withdrawals || []);
+    $('earnings-withdrawals').innerHTML = list.length
+      ? list.map((w) => `
+          <div class="coin-row" style="justify-content:flex-start">
+            <span>${fmtDate(w.createdAt)}</span>
+            <b>${fmtAmount(w.amount)} ${esc(w.symbol)}</b>
+            <span>→</span>
+            ${shortAddr(w.toAddress)}
+          </div>`).join('')
+      : '<div class="empty"><span class="big">📭</span>Sin retiros todavía.</div>';
+  } catch (e) {
+    $('earnings-list').innerHTML = `<div class="empty">No se pudo cargar las ganancias: ${esc(e.message)}</div>`;
+  }
+}
+
+async function withdrawEarnings(symbol) {
+  const label = symbol ? `las ganancias de ${symbol}` : 'TODAS las ganancias';
+  if (!confirm(`¿Retirar ${label} a tu cuenta principal? (sin costo) Se reinicia el contador de ganancia para esa moneda.`)) return;
+  try {
+    await api('/api/v1/earnings/withdraw', { method: 'POST', body: JSON.stringify({ symbol: symbol || '' }) });
+    toast('Ganancias retiradas correctamente.');
+    refreshEarnings();
+  } catch (e) { toast(e.message || 'Error al retirar', true); }
 }
 
 async function refreshAppUpdate() {
@@ -836,6 +915,7 @@ function fillCoinForm(c) {
   $('cc-network').value = c.network;
   $('cc-contract').value = c.contractAddress;
   $('cc-fee').value = c.feeAddress;
+  $('cc-reserve').value = c.reserveAddress || '';
   $('cc-nodes').value = (c.nodes || []).map((n) => n.uri).join('\n');
   ccLogoData = c.logo || '';
   const isEvmOrTrc = ['ethereum', 'erc20', 'bep20', 'base', 'arbitrum', 'polygon', 'trc20'].includes(c.network);
@@ -981,6 +1061,7 @@ function refreshTab(tab) {
     if (tab === 'reports') return refreshReports();
     if (tab === 'reserves') return refreshReserves();
     if (tab === 'settings') return refreshCommissions();
+    if (tab === 'earnings') return refreshEarnings();
     if (tab === 'nodes') return refreshNodes();
     if (tab === 'market') return refreshMarket(true);
     if (tab === 'coins') return refreshCustomCoins();
@@ -1224,6 +1305,7 @@ document.addEventListener('DOMContentLoaded', () => {
         network: $('cc-network').value,
         contractAddress: $('cc-contract').value.trim(),
         feeAddress: $('cc-fee').value.trim(),
+        reserveAddress: $('cc-reserve').value.trim(),
         logo: ccLogoData,
         nodes: $('cc-nodes').value.split(/\r?\n/).map((s) => s.trim()).filter(Boolean),
       };
@@ -1307,6 +1389,46 @@ document.addEventListener('DOMContentLoaded', () => {
 
   ['usd-slow', 'usd-medium', 'usd-fast'].forEach((id) => {
     $(id).addEventListener('input', () => updateConversion().catch(() => {}));
+  });
+
+  // Reparto por velocidad (Lento 50 / Normal 75 / Rapido 100 del global)
+  $('save-commission-speed').addEventListener('click', async () => {
+    try {
+      const slow = parseFloat($('pct-slow').value);
+      const medium = parseFloat($('pct-medium').value);
+      const fast = parseFloat($('pct-fast').value);
+      if ([slow, medium, fast].some((v) => isNaN(v) || v < 0)) { toast('Valores inválidos', true); return; }
+      // Guardar cada override por separado; el backend valida que no superen el global.
+      let err = null, saved = 0;
+      for (const [speed, val] of [['slow', slow], ['medium', medium], ['fast', fast]]) {
+        const r = await api('/api/v1/settings/commission-by-speed', {
+          method: 'POST', body: JSON.stringify({ speed, percent: val }),
+        });
+        if (r.error) { err = r.error; }
+        else saved++;
+      }
+      if (err) toast(err, true);
+      $('commission-speed-status').textContent = saved
+        ? `Reparto guardado: 🐢 ${slow}% · 🚶 ${medium}% · ⚡ ${fast}%`
+        : 'No se pudo guardar el reparto.';
+      refreshCommissions();
+    } catch (err) { toast(err.message, true); }
+  });
+
+  $('reset-commission-speed').addEventListener('click', async () => {
+    try {
+      await api('/api/v1/settings/commission-by-speed', { method: 'DELETE' });
+      toast('Reparto restablecido a 50/75/100 del global.');
+      $('commission-speed-status').textContent = 'Reparto restablecido a 50/75/100 del global.';
+      refreshCommissions();
+    } catch (err) { toast(err.message, true); }
+  });
+
+  // Ganancias: retirar todas + retirar por moneda (delegado)
+  $('withdraw-all-earnings').addEventListener('click', () => withdrawEarnings(''));
+  document.addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-earn-withdraw]');
+    if (btn) withdrawEarnings(btn.dataset.earnWithdraw);
   });
 
   $('save-app-update').addEventListener('click', async () => {

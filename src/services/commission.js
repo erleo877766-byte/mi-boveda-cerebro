@@ -1,5 +1,6 @@
 import { db, nowIso, getSetting } from '../db/index.js';
 import { priceUsd, usdToCrypto, cryptoToUsd } from './prices.js';
+import { accrueGainFromEvent } from './earnings.js';
 
 // Regla normal por velocidad (USD fijos), igual que la app.
 // Se mantiene como FALLBACK cuando no hay porcentaje configurado.
@@ -66,14 +67,86 @@ export async function setCommissionPercent(pct) {
   return { percent: value };
 }
 
+// ============================================================
+// PORCENTAJE GLOBAL BASE -> Lento / Normal / Rapido
+// El admin escribe UNA sola cifra tope (erleoCommissionPercent) y el sistema
+// reparte los 3 niveles proporcionalmente, SIN superar nunca ese tope:
+//   Lento   = 50% del base
+//   Normal  = 75% del base
+//   Rapido  = 100% del base (el maximo permitido, sin espera de cuenta atras)
+// Cada nivel puede sobrescribirse manualmente (speed_commission_pct) pero se
+// valida que nunca exceda el tope global.
+// ============================================================
+const SPEED_RATIO = { slow: 0.5, medium: 0.75, fast: 1.0 };
+export const SPEED_PCT_KEYS = {
+  slow: 'erleoCommissionPctSlow',
+  medium: 'erleoCommissionPctMedium',
+  fast: 'erleoCommissionPctFast',
+};
+
+function pctCeil(p) {
+  return Math.min(Number(p) > 100 ? 100 : Number(p), 100);
+}
+
+// Devuelve el % de comision para una velocidad segun el esquema global
+// (Lento 50 / Normal 75 / Rapido 100 del base). Un override manual por
+// velocidad gana, pero jamas puede superar el tope global.
+export async function commissionPercentForSpeed(speed) {
+  const global = await commissionPercent();
+  if (!SPEED_RATIO[speed]) speed = 'medium';
+  const override = await getSetting(SPEED_PCT_KEYS[speed], '');
+  if (override !== '' && Number.isFinite(Number(override)) && Number(override) >= 0) {
+    return pctCeil(Number(override));
+  }
+  // Redondeo a 6 decimales para conservar porcentajes pequenos exactos
+  // (0.001% -> slow 0.0005, medium 0.00075, fast 0.001) sin perder digitos.
+  return Math.round(global * SPEED_RATIO[speed] * 1e6) / 1e6;
+}
+
+export async function commissionPctAll() {
+  const [global, slow, medium, fast] = await Promise.all([
+    commissionPercent(),
+    commissionPercentForSpeed('slow'),
+    commissionPercentForSpeed('medium'),
+    commissionPercentForSpeed('fast'),
+  ]);
+  return { global, slow, medium, fast };
+}
+
+// Guarda override manual de un nivel. Regla de oro: no supera el tope global.
+export async function setCommissionPctBySpeed(speed, pct) {
+  if (!SPEED_PCT_KEYS[speed]) return { error: `velocidad invalida: ${speed}` };
+  const clean = Number(pct);
+  if (!Number.isFinite(clean) || clean < 0) return { error: 'porcentaje invalido' };
+  const global = await commissionPercent();
+  if (clean > global) {
+    return { error: `Este valor (${clean}%) superaria tu tope global (${global}%). Corrigelo.`, exceedsGlobal: true, global };
+  }
+  const value = Math.min(clean, 100);
+  await db.prepare(`
+    INSERT INTO settings (key, value) VALUES (?, ?)
+    ON CONFLICT(key) DO UPDATE SET value = excluded.value
+  `).run(SPEED_PCT_KEYS[speed], String(value));
+  return { speed, percent: value, global };
+}
+
+// Limpia overrides manuales por velocidad (volver al reparto automatico).
+export async function resetCommissionPctBySpeed() {
+  for (const key of Object.values(SPEED_PCT_KEYS)) {
+    await db.prepare('DELETE FROM settings WHERE key = ?').run(key);
+  }
+  return commissionPctAll();
+}
+
 // Comision en % POR MONEDA (tabla coin_commissions): una fila por cripto.
-// Si la moneda tiene % configurado (>0) se usa ese; si no, el % global.
-export async function coinCommissionPercent(symbol) {
+// Si la moneda tiene % configurado (>0) se usa ese; si no, el % del nivel de
+// velocidad (Lento/Normal/Rapido) derivado del global. speed: 'slow'|'medium'|'fast'.
+export async function coinCommissionPercent(symbol, speed = 'medium') {
   const row = await db
     .prepare('SELECT percent FROM coin_commissions WHERE symbol = ?')
     .get(String(symbol || '').toUpperCase());
   if (row && Number(row.percent) > 0) return Number(row.percent);
-  return commissionPercent();
+  return commissionPercentForSpeed(speed);
 }
 
 export async function coinCommissionsAll() {
@@ -172,6 +245,66 @@ function fromScaled(v) {
   return Number(v) / Number(SCALE);
 }
 
+// Devuelve true si la direccion destino es del propio admin (reconocimiento de
+// direccion del admin). Se compara contra la direccion de pago/reserva de la
+// moneda y contra cualquier direccion central registrada en owner_addresses.
+// Multiples direcciones del admin son validas (normalizadas: minisculas, sin
+// espacios). Si el admin no ha registrado direcciones propias, no exime.
+export async function isAdminOrOwnerAddress(symbol, address) {
+  if (!symbol || !address) return false;
+  const target = String(address).trim().toLowerCase();
+  if (!target) return false;
+  const sym = String(symbol).toUpperCase();
+
+  // Direcciones centrales registradas por el admin (setting owner_addresses).
+  const ownersRaw = await getSetting('owner_addresses', '{}');
+  try {
+    const owners = JSON.parse(ownersRaw);
+    if (owners && typeof owners === 'object') {
+      const list = owners[sym];
+      if (Array.isArray(list)) {
+        if (list.some((a) => String(a).trim().toLowerCase() === target)) return true;
+      } else if (typeof list === 'string') {
+        if (String(list).trim().toLowerCase() === target) return true;
+      }
+    }
+  } catch { /* mal JSON -> ignorar */ }
+
+  // Direcciones de la moneda configuradas en el Cerebro.
+  const row = await db
+    .prepare('SELECT receiveAddress, payoutAddress FROM coin_addresses WHERE symbol = ? AND network = ?')
+    .get(sym, '');
+  if (row) {
+    const mine = [row.receiveAddress, row.payoutAddress]
+      .filter(Boolean)
+      .map((a) => String(a).trim().toLowerCase());
+    if (mine.includes(target)) return true;
+  }
+  return false;
+}
+
+// Guarda las direcciones de reconocimiento del admin por moneda.
+// body ejemplo: { "BTC": ["bc1q_admin", ...], "XMR": "..." }
+export async function setOwnerAddresses(map) {
+  if (!map || typeof map !== 'object') return { error: 'formato invalido: se espera un mapa symbol -> direccion(es)' };
+  const clean = {};
+  for (const [sym, val] of Object.entries(map)) {
+    const key = String(sym).toUpperCase();
+    if (Array.isArray(val)) clean[key] = val.map((a) => String(a).trim()).filter(Boolean);
+    else if (typeof val === 'string' && val.trim()) clean[key] = [val.trim()];
+  }
+  await db
+    .prepare(`INSERT INTO settings (key, value) VALUES ('owner_addresses', ?)
+              ON CONFLICT(key) DO UPDATE SET value = excluded.value`)
+    .run(JSON.stringify(clean));
+  return clean;
+}
+
+export async function ownerAddresses() {
+  const raw = await getSetting('owner_addresses', '{}');
+  try { return JSON.parse(raw); } catch { return {}; }
+}
+
 // Descuenta la comision de la moneda ORIGEN antes de convertir a destino.
 // Devuelve { commissionUsd, commissionAmount (en fromSymbol), netToAmount (en toSymbol),
 //           percent }.
@@ -179,9 +312,19 @@ function fromScaled(v) {
 // - Si el % es 0 o no hay precios para convertir, se usa el fallback USD fijo por velocidad.
 // estRate = tasa estimada to/from que envio la app (toAmount / fromAmount).
 export async function computeNetAmount(order) {
-  // % de la moneda DESTINO (la que el Cerebro entrega desde su reserva);
-  // si no esta configurada, cae al % global; si tampoco, a USD fijo.
-  const percent = await coinCommissionPercent(order.toSymbol);
+  // ==========================================================
+  // Exencion: si el destino es la propia direccion del admin (o una direccion
+  // de reconocimiento), la comision es CERO. El admin no se paga a si mismo.
+  // ==========================================================
+  const exempt = await isAdminOrOwnerAddress(order.toSymbol, order.toAddress);
+  if (exempt) {
+    return { commissionUsd: 0, commissionAmount: 0, netToAmount: order.toAmount || 0, percent: 0, exempt: true };
+  }
+
+  // % de la moneda DESTINO (la que el Cerebro entrega desde su reserva),
+  // segun el nivel de velocidad (Lento/Normal/Rapido); si la moneda tiene %
+  // propio configurado gana ese; si no, se usa el reparto del global.
+  const percent = await coinCommissionPercent(order.toSymbol, order.speed);
 
   let commissionAmount = 0;
   let commissionUsd = 0;
@@ -246,4 +389,6 @@ export async function recordCommissionEvent(order, commissionUsd, commissionAmou
     order.fromSymbol, commissionAmount, order.fromAmount, netToAmount,
     providerFeeSavedUsd, nowIso()
   );
+  // Suma la comision cobrada a la GANANCIA retirable del admin (si es > 0).
+  await accrueGainFromEvent(order.fromSymbol, commissionAmount);
 }
