@@ -4,6 +4,72 @@
 
 import { mapLimit } from '../utils.js';
 import { recordPrice } from './autonomous.js';
+import { getSetting, setSetting } from '../db/index.js';
+
+// Fuentes de precio disponibles y su nombre visible. Las fuentes se pueden
+// activar/desactivar y reordenar (prioridad) desde el panel del Cerebro; el
+// ajuste se guarda en la tabla `settings` (clave `priceSources`).
+export const PRICE_SOURCE_DEFS = [
+  { id: 'binance', label: 'Binance' },
+  { id: 'coinbase', label: 'Coinbase' },
+  { id: 'kraken', label: 'Kraken' },
+  { id: 'coinpaprika', label: 'CoinPaprika' },
+  { id: 'coingecko', label: 'CoinGecko' },
+];
+
+const DEFAULT_PRICE_SOURCES_JSON =
+  '{"binance":true,"coinbase":true,"kraken":true,"coinpaprika":true,"coingecko":true,' +
+  '"order":["binance","coinbase","kraken","coinpaprika","coingecko"]}';
+
+let priceSourcesCache = null; // { binance: bool, order: [...] }
+let priceSourcesCacheAt = 0;
+
+export async function loadPriceSources(force = false) {
+  if (!force && priceSourcesCache && Date.now() - priceSourcesCacheAt < 5000) {
+    return priceSourcesCache;
+  }
+  let parsed = null;
+  try {
+    const raw = (await getSetting('priceSources')).trim();
+    if (raw) parsed = JSON.parse(raw);
+  } catch (_) {}
+  priceSourcesCache = parsed || JSON.parse(DEFAULT_PRICE_SOURCES_JSON);
+  priceSourcesCacheAt = Date.now();
+  return priceSourcesCache;
+}
+
+// Estado de las fuentes para el panel: activadas y orden de prioridad.
+export async function getPriceSources() {
+  const s = await loadPriceSources(true);
+  return {
+    sources: PRICE_SOURCE_DEFS.map((def) => ({
+      id: def.id, label: def.label, enabled: s[def.id] !== false,
+    })),
+    order: [...s.order],
+  };
+}
+
+// Guarda activas + orden de prioridad (respetando la lista conocida).
+export async function setPriceSources(payload) {
+  const s = await loadPriceSources(true);
+  const next = { ...s };
+  if (payload && typeof payload.enabled === 'object') {
+    for (const def of PRICE_SOURCE_DEFS) {
+      const v = payload.enabled[def.id];
+      if (typeof v === 'boolean') next[def.id] = v;
+    }
+  }
+  if (Array.isArray(payload && payload.order)) {
+    const known = new Set(PRICE_SOURCE_DEFS.map((d) => d.id));
+    const ord = payload.order.filter((id) => known.has(id));
+    const rest = PRICE_SOURCE_DEFS.map((d) => d.id).filter((id) => !ord.includes(id));
+    next.order = [...ord, ...rest];
+  }
+  await setSetting('priceSources', JSON.stringify(next));
+  priceSourcesCache = next;
+  priceSourcesCacheAt = Date.now();
+  return { sources: PRICE_SOURCE_DEFS.map((d) => ({ id: d.id, label: d.label, enabled: next[d.id] !== false })), order: [...next.order] };
+}
 
 const BINANCE = 'https://api.binance.com/api/v3/ticker/price?symbol=';
 const COINGECKO = 'https://api.coingecko.com/api/v3/simple/price';
@@ -142,37 +208,47 @@ export async function priceUsd(symbol, force = false) {
   let price = null;
 
   const ticker = key === 'MATIC' ? 'POL' : key;
-  // Fuente 1: Binance (la mas rapida; puede fallar por bloqueo geografico).
-  const bin = await fetchJson(`${BINANCE}${ticker}USDT`);
-  if (bin && bin.price) {
-    price = parseFloat(bin.price);
-  }
-  // Fuente 2: Coinbase (sin clave, funciona desde EE.UU.).
-  if (price == null) {
-    const cb = await fetchJson(`${COINBASE}${ticker}-USD/spot`);
-    if (cb && cb.data && cb.data.amount && Number(cb.data.amount) > 0) {
-      price = parseFloat(cb.data.amount);
-    }
-  }
-  // Fuente 3: Kraken (para XMR, XNO y similares sin par en las anteriores).
-  if (price == null) {
-    const kp = KRAKEN_PAIR[key];
-    if (kp) {
-      const kr = await fetchJson(`${KRAKEN}${kp}`);
-      if (kr && kr.result && (!kr.error || kr.error.length === 0)) {
-        const first = Object.values(kr.result)[0];
-        const last = first && first.c && first.c[0];
-        if (last && Number(last) > 0) price = parseFloat(last);
+  const srcCfg = await loadPriceSources(false);
+  const order = Array.isArray(srcCfg.order) ? srcCfg.order : PRICE_SOURCE_DEFS.map((d) => d.id);
+  for (const srcId of order) {
+    if (price != null) break;
+    if (srcCfg[srcId] === false) continue; // fuente desactivada por el admin
+    switch (srcId) {
+      case 'binance': {
+        const bin = await fetchJson(`${BINANCE}${ticker}USDT`);
+        if (bin && bin.price) price = parseFloat(bin.price);
+        break;
       }
+      case 'coinbase': {
+        const cb = await fetchJson(`${COINBASE}${ticker}-USD/spot`);
+        if (cb && cb.data && cb.data.amount && Number(cb.data.amount) > 0) {
+          price = parseFloat(cb.data.amount);
+        }
+        break;
+      }
+      case 'kraken': {
+        const kp = KRAKEN_PAIR[key];
+        if (kp) {
+          const kr = await fetchJson(`${KRAKEN}${kp}`);
+          if (kr && kr.result && (!kr.error || kr.error.length === 0)) {
+            const first = Object.values(kr.result)[0];
+            const last = first && first.c && first.c[0];
+            if (last && Number(last) > 0) price = parseFloat(last);
+          }
+        }
+        break;
+      }
+      case 'coinpaprika': {
+        try {
+          const pm = await paprikaMap();
+          const pp = pm.get(key);
+          if (pp != null && pp > 0) price = pp;
+        } catch (_) {}
+        break;
+      }
+      // coingecko se procesa al final de todos modos (no consume rate-limit por bucle)
+      default: break;
     }
-  }
-  // Fuente 4: CoinPaprika (sin clave; cubre ~2000 monedas en 1 peticion).
-  if (price == null) {
-    try {
-      const pm = await paprikaMap();
-      const pp = pm.get(key);
-      if (pp != null && pp > 0) price = pp;
-    } catch (_) {}
   }
   if (price == null && customSources.has(key)) {
     // Token personalizado (EVM/TRC20): buscar por contrato en CoinGecko.

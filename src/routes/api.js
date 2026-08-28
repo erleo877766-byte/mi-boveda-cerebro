@@ -12,7 +12,7 @@ import { statusPerCoin, withdrawGain, withdrawalHistory } from '../services/earn
 import * as nodesService from '../services/nodes.js';
 import * as balanceService from '../services/balance.js';
 import { syncCakeNodes } from '../services/cakeNodes.js';
-import { priceUsd, resolveBatch, setCustomCoinSources } from '../services/prices.js';
+import { priceUsd, resolveBatch, setCustomCoinSources, getPriceSources, setPriceSources } from '../services/prices.js';
 import * as customCoinsService from '../services/customCoins.js';
 import { mapLimit } from '../utils.js';
 import { validateAddress } from '../services/address_validation.js';
@@ -428,6 +428,21 @@ router.post('/settings/commission-by-speed', sessionAuth, async (req, res) => {
 // DELETE vuelve los 3 niveles al reparto automatico del global (sin overrides).
 router.delete('/settings/commission-by-speed', sessionAuth, async (req, res) => {
   res.json(await resetCommissionPctBySpeed());
+});
+
+// ============================================================
+// FUENTES de precios del Mercado (activar/desactivar + prioridad)
+// ============================================================
+// GET devuelve el estado de cada fuente y el orden de prioridad actual.
+router.get('/settings/price-sources', apiKeyOrSessionAuth, async (req, res) => {
+  res.json(await getPriceSources());
+});
+
+// body: { enabled: { binance: bool, ... }, order: ['kraken', 'binance', ...] }
+router.post('/settings/price-sources', sessionAuth, async (req, res) => {
+  const r = await setPriceSources(req.body || {});
+  if (r.error) return res.status(400).json(r);
+  res.json(r);
 });
 
 // Direcciones de reconocimiento del admin (para cobrar CERO comision).

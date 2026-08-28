@@ -348,6 +348,14 @@
         <table class="table"><thead><tr><th>Moneda</th><th>Precio USD</th><th>Estado</th></tr></thead>
         <tbody id="market-tbody"><tr><td colspan="3" class="empty-cell">Cargando precios…</td></tr></tbody></table>
       </div></div>
+      <div class="card" style="margin-top:14px">
+        <div class="section-head"><h3 style="margin:0">Fuentes de precio</h3>
+          <button id="src-save" class="btn btn-primary" style="display:none">💾 Guardar</button>
+          <button id="src-close" class="btn" style="display:none">Cerrar</button>
+        </div>
+        <p class="hint">Activa o desactiva las fuentes que usará el Mercado y ordena su prioridad. La primera fuente activa que responda dará el precio. (La app aplica los cambios en segundos; si desactivas todas, el Mercado usa apenas el último precio conocido.)</p>
+        <div id="market-src" class="hint">Cargando fuentes…</div>
+      </div>
     </section>
 
     <!-- ============ NOTIFICACIONES ============ -->

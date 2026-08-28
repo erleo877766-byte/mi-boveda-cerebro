@@ -786,6 +786,66 @@ async function syncCakeNodes() {
 }
 
 // ============================================================
+// Fuentes de precio del Mercado: activar/desactivar + prioridad
+// ============================================================
+let priceSourcesState = null; // { sources: [{id,label,enabled}], order: [...] }
+
+async function refreshPriceSources(force = false) {
+  const rep = await api('/api/v1/settings/price-sources', { cache: !force });
+  priceSourcesState = rep;
+  renderPriceSources();
+}
+
+function renderPriceSources() {
+  const wrap = $('market-src');
+  const saveBtn = $('src-save');
+  const closeBtn = $('src-close');
+  if (!priceSourcesState || !priceSourcesState.sources) {
+    wrap.textContent = 'No se pudieron cargar las fuentes.';
+    return;
+  }
+  const enabled = {};
+  priceSourcesState.sources.forEach((s) => { enabled[s.id] = s.enabled; });
+  const byOrder = [...priceSourcesState.order]
+    .map((id) => priceSourcesState.sources.find((s) => s.id === id))
+    .filter(Boolean);
+  const rows = byOrder.map((s, i) => `
+    <div class="form-row" style="gap:10px;align-items:center;margin:6px 0">
+      <input type="checkbox" class="src-en" data-id="${s.id}" ${s.enabled ? 'checked' : ''} style="width:18px;height:18px">
+      <span style="flex:1">${esc(s.label)} <span class="pill pill-cyan" style="font-size:11px">#${i + 1}</span></span>
+      <button class="btn btn-sm src-up" data-id="${s.id}" ${i === 0 ? 'disabled' : ''}>▲</button>
+      <button class="btn btn-sm src-down" data-id="${s.id}" ${i === byOrder.length - 1 ? 'disabled' : ''}>▼</button>
+    </div>`).join('');
+  wrap.innerHTML = rows || '<div class="empty">Sin fuentes definidas.</div>';
+  saveBtn.style.display = closeBtn.style.display = 'inline-block';
+  wrap.querySelectorAll('.src-up').forEach((b) => b.addEventListener('click', () => moveSource(b.dataset.id, -1)));
+  wrap.querySelectorAll('.src-down').forEach((b) => b.addEventListener('click', () => moveSource(b.dataset.id, 1)));
+}
+
+function moveSource(id, dir) {
+  const order = [...priceSourcesState.order];
+  const idx = order.indexOf(id);
+  const j = idx + dir;
+  if (idx < 0 || j < 0 || j >= order.length) return;
+  [order[idx], order[j]] = [order[j], order[idx]];
+  priceSourcesState.order = order;
+  renderPriceSources();
+}
+
+async function savePriceSources() {
+  const enabled = {};
+  priceSourcesState.sources.forEach((s) => {
+    const cb = document.querySelector(`.src-en[data-id="${s.id}"]`);
+    enabled[s.id] = cb ? cb.checked : s.enabled;
+  });
+  await api('/api/v1/settings/price-sources', {
+    method: 'POST', body: JSON.stringify({ enabled, order: priceSourcesState.order }),
+  });
+  await refreshPriceSources(true);
+  refreshMarket(true);
+  toast('Fuentes de precio actualizadas ✓');
+}
+
 // Mercado: precios en vivo + conversor cripto <-> USD
 // ============================================================
 let marketPrices = [];   // [{ symbol, price }]
@@ -1337,6 +1397,15 @@ document.addEventListener('DOMContentLoaded', () => {
   ['mkt-symbol', 'mkt-crypto', 'mkt-usd'].forEach((id) => {
     $(id).addEventListener('input', updateMarketConverter);
   });
+
+  $('src-save').addEventListener('click', savePriceSources);
+  $('src-close').addEventListener('click', () => {
+    $('src-save').style.display = $('src-close').style.display = 'none';
+    $('market-src').textContent = 'Cargando fuentes…';
+    refreshPriceSources(true).catch(() => {});
+  });
+  refreshPriceSources().catch(() => {});
+  refreshMarket().catch(() => {});
   $('mkt-symbol').addEventListener('input', () => {
     const dl = $('market-symbols');
     if (dl && marketSymbols.length) {
