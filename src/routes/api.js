@@ -301,6 +301,13 @@ router.post('/orders/check-liquidity', apiKeyOrDeviceAuth, async (req, res) => {
   res.json(r);
 });
 
+// GET /api/v1/balances - la billetera consulta los saldos del Cerebro en vivo
+// (reservas del admin por moneda) para mostrar y decidir si tiene con que pagar
+// el destino antes de aceptar un intercambio.
+router.get('/balances', apiKeyOrDeviceAuth, async (req, res) => {
+  res.json(await ordersService.allReserveBalances());
+});
+
 // GET /api/v1/orders/:id - la app consulta estado (pending/approved/rejected/completed).
 router.get('/orders/:id', apiKeyOrSessionAuth, async (req, res) => {
   const order = await ordersService.getOrder(req.params.id);

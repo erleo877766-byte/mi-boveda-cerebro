@@ -305,6 +305,28 @@ export async function checkLiquidity(toSymbol, toAmount, toNetwork = '') {
   };
 }
 
+// Saldos de reserva del Cerebro en vivo para la billetera. Devuelve por cada
+// moneda con direccion de reserva configurada: saldo disponible (consultado
+// on-chain o manual como fallback), si esta activa y si hay reserva.
+export async function allReserveBalances() {
+  const rows = await db.prepare('SELECT * FROM coin_addresses ORDER BY symbol ASC').all();
+  const out = [];
+  for (const r of rows) {
+    const payoutAddr = (r.payoutAddress || r.address || '').trim();
+    const manualBalance = r.balance != null ? Number(r.balance) : 0;
+    const { available = 0, source = 'none' } = await availableBalance(r.symbol, payoutAddr, manualBalance);
+    out.push({
+      symbol: r.symbol,
+      network: String(r.network || ''),
+      enabled: r.enabled === 1,
+      hasReserve: Boolean(payoutAddr),
+      available,
+      balanceSource: source,
+    });
+  }
+  return { balances: out, updatedAt: nowIso() };
+}
+
 // Limpiar el historial: borra solo las ordenes ya terminadas (completed,
 // rejected, cancelled) y sus eventos. Nunca toca pending ni approved.
 export async function clearOrderHistory() {
