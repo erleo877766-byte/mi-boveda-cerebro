@@ -51,13 +51,11 @@ export async function accrueGainFromEvent(commissionSymbol, commissionAmount) {
     .run(sym, amount);
 }
 
-// Retirar ganancia acumulada de una moneda a la direccion principal del admin.
+// Retirar ganancia acumulada de UNA moneda a la direccion principal del admin.
 // Devuelve { ok, symbol, amount, remaining, alreadyWithdrawn }.
-export async function withdrawGain(symbol, { toAddress = '', note = '', txHash = '' } = {}) {
-  const sym = String(symbol || '').toUpperCase();
-  if (!sym) return { error: 'moneda invalida' };
+async function withdrawOne(sym, { toAddress = '', note = '', txHash = '' } = {}) {
   const gain = await gainForSymbol(sym);
-  if (gain <= 0) return { error: 'No hay ganancias retirables para ' + sym, alreadyWithdrawn: true };
+  if (gain <= 0) return { ok: false, alreadyWithdrawn: true };
 
   await db
     .prepare('DELETE FROM earnings WHERE symbol = ? AND gain <= 0')
@@ -72,6 +70,37 @@ export async function withdrawGain(symbol, { toAddress = '', note = '', txHash =
     .run(sym, gain, toAddress || '', txHash || '', note || '', new Date().toISOString());
 
   return { ok: true, symbol: sym, amount: gain, remaining: 0, toAddress: toAddress || '' };
+}
+
+// Retirar ganancia acumulada. Si <symbol> viene vacio e interpreta que es
+// "retirar TODAS las monedas" (delegado del boton del panel).
+// Devuelve { ok, withdrawn: [...], defaultSymbol? }.
+export async function withdrawGain(symbol, { toAddress = '', note = '', txHash = '' } = {}) {
+  const sym = String(symbol || '').toUpperCase().trim();
+  if (sym) {
+    const r = await withdrawOne(sym, { toAddress, note, txHash });
+    if (!r.ok) return { error: 'No hay ganancias retirables para ' + sym, alreadyWithdrawn: true };
+    return r;
+  }
+
+  // Retirar TODAS las monedas con ganancia acumulada.
+  const all = await allEarnings();
+  const symbols = Object.keys(all || {}).filter((s) => Number(all[s]) > 0);
+  if (!symbols.length) return { error: 'No hay ganancias retirables', alreadyWithdrawn: true };
+
+  const withdrawn = [];
+  for (const s of symbols) {
+    const r = await withdrawOne(s, { toAddress: '', note, txHash });
+    if (r.ok) withdrawn.push({ symbol: s, amount: r.amount });
+  }
+  const total = withdrawn.reduce((a, b) => a + Number(b.amount), 0);
+  return {
+    ok: true,
+    withdrawn,
+    symbols: withdrawn.map((w) => w.symbol),
+    amount: total,
+    count: withdrawn.length,
+  };
 }
 
 // Historial de retiros (para el panel / app).

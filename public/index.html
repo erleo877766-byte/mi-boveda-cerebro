@@ -87,6 +87,7 @@
     <section id="tab-orders" class="tab-content active">
       <div class="section-head">
         <h2>Órdenes pendientes <span id="pending-count-badge" class="pill pill-warn"></span></h2>
+        <button id="export-pending" class="btn btn-ghost">⬇ Exportar CSV</button>
       </div>
       <p class="hint">Intercambios que el Cerebro no pudo procesar solo (falta dirección de reserva, moneda desactivada o el usuario espera tu acción). Revisa, aprueba o rechaza.</p>
       <div id="pending-list"></div>
@@ -96,7 +97,10 @@
     <section id="tab-history" class="tab-content">
       <div class="section-head">
         <h2>Historial de órdenes</h2>
-        <button id="clear-history" class="btn btn-danger">Limpiar historial</button>
+        <div style="display:flex;gap:8px">
+          <button id="export-history" class="btn btn-ghost">⬇ Exportar CSV</button>
+          <button id="clear-history" class="btn btn-danger">Limpiar historial</button>
+        </div>
       </div>
       <p class="hint">Todo lo realizado. Las órdenes aprobadas automáticamente aparecen aquí para que envíes los fondos desde tu billetera y marques la entrega.</p>
       <div id="history-chart"></div>

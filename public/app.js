@@ -219,6 +219,9 @@ function svgBarChart(items, opts = {}) {
 // ============================================================
 // Órdenes (tabla con detalle expandible)
 // ============================================================
+let lastPending = [];   // última lista de pendientes (para exportar CSV)
+let lastHistory = [];   // última lista de historial (para exportar CSV)
+
 function orderDetailHTML(o, reservesMap, isApproved) {
   let reserveAddr = '';
   if (isApproved) {
@@ -281,6 +284,39 @@ function orderTable(orders, reservesMap) {
     <tbody>${rows}</tbody></table></div></div>`;
 }
 
+// Exporta un listado de órdenes a CSV y lo descarga.
+function downloadCsv(name, header, rows) {
+  const esc = (v) => {
+    const s = v == null ? '' : String(v);
+    return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+  };
+  const lines = [header.map(esc).join(',')]
+    .concat(rows.map((r) => r.map(esc).join(',')));
+  const blob = new Blob(['\uFEFF' + lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = name + '.csv';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(a.href);
+}
+
+function exportOrdersCsv(orders) {
+  const header = ['Fecha', 'Operación', 'Monto', 'Destino', 'Extra ID', 'Usuario', 'Velocidad', 'Estado',
+    'Comisión USD', 'Comisión monto', 'Neto a entregar', 'Creado', 'Completado'];
+  const rows = (orders || []).map((o) => [
+    fmtDate(o.createdAt), `${o.fromSymbol || ''} -> ${o.toSymbol || ''}`,
+    `${fmtAmount(o.fromAmount)} ${o.fromSymbol || ''}`, o.toAddress || '',
+    o.toExtraId || '', o.userLabel || '', o.speed || '', o.status || '',
+    o.commissionUsd != null ? Number(o.commissionUsd).toFixed(2) : '',
+    o.commissionAmount ? `${o.commissionAmount} ${o.fromSymbol}` : '',
+    o.netToAmount ? `${o.netToAmount} ${o.toSymbol}` : '',
+    fmtDate(o.createdAt), o.completedAt ? fmtDate(o.completedAt) : '',
+  ]);
+  downloadCsv('ordenes_' + new Date().toISOString().slice(0, 10), header, rows);
+}
+
 async function refreshOrders() {
   const [dashboard, recent, addresses] = await Promise.all([
     api('/api/v1/report/dashboard'),
@@ -291,12 +327,14 @@ async function refreshOrders() {
   for (const r of addresses) if (!reservesMap[r.symbol]) reservesMap[r.symbol] = r;
 
   const pending = dashboard.pending || [];
+  lastPending = pending;
   $('pending-count-badge').textContent = pending.length ? pending.length + ' pendientes' : '';
   $('pending-count-badge').style.display = pending.length ? '' : 'none';
   $('pending-list').innerHTML = orderTable(pending, reservesMap);
 
   // Historial: todo lo que NO está pending.
   const hist = (recent || []).filter((o) => o.status !== 'pending');
+  lastHistory = hist;
   const histSeries = dailySeries(hist, () => 1, 14);
   const histTotal = histSeries.reduce((a, b) => a + b.value, 0);
   $('history-chart').innerHTML = `
@@ -380,10 +418,12 @@ function networkRowHTML(symbol, network, r) {
     ? fmtAmount(r.onchainBalance)
     : '';
   const val = esc(r ? (r.address ?? '') : '');
+  const pval = esc(r ? (r.payoutAddress ?? '') : '');
   return `
     <div class="addr-row${isConfigured ? ' configured' : ''}" data-symbol="${esc(symbol)}" data-network="${esc(network)}">
       ${netPill(network)}
-      <input class="input net-in addr-in" data-f="address" value="${val}" placeholder="Pega aquí tu dirección de ${esc(symbol)}${network ? ' (' + esc(network) + ')' : ''}">
+      <input class="input net-in addr-in" data-f="address" value="${val}" placeholder="Dirección de cobro de ${esc(symbol)}${network ? ' (' + esc(network) + ')' : ''}">
+      <input class="input net-in addr-payout" data-f="payoutAddress" value="${pval}" placeholder="Dirección de pago / payout (opcional)">
       <span class="net-balance">${balanceText}</span>
       <button class="btn btn-primary btn-sm addr-save" data-action="save-coin-net">Guardar</button>
     </div>`;
@@ -906,7 +946,7 @@ function renderMarket() {
     <tr>
       <td><b>${esc(p.symbol)}</b></td>
       <td class="mono" style="color:var(--muted)">· —</td>
-      <td><span class="status-pill status-flat">Sin par</span></td>
+      <td><span class="status-pill status-flat" title="Configurada, pero ninguna fuente externa (Binance, Coinbase, Kraken, CoinPaprika, CoinGecko) cotiza esta moneda. El sistema funciona igual: usa el último precio conocido y bloquea intercambios si no hay precio.">Sin cotización externa</span></td>
     </tr>`).join('');
   body.innerHTML = rows + noRows;
 }
@@ -1202,6 +1242,17 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
+  $('export-pending').addEventListener('click', () => {
+    if (!lastPending.length) return toast('No hay órdenes pendientes para exportar.');
+    exportOrdersCsv(lastPending);
+    toast(`Exportadas ${lastPending.length} órdenes (CSV).`);
+  });
+  $('export-history').addEventListener('click', () => {
+    if (!lastHistory.length) return toast('No hay historial para exportar todavía.');
+    exportOrdersCsv(lastHistory);
+    toast(`Exportadas ${lastHistory.length} órdenes (CSV).`);
+  });
+
   document.querySelectorAll('.tab').forEach((t) => {
     t.addEventListener('click', () => {
       document.querySelectorAll('.tab').forEach((x) => x.classList.remove('active'));
@@ -1252,9 +1303,13 @@ document.addEventListener('DOMContentLoaded', () => {
         const sym = row.dataset.symbol;
         const net = row.dataset.network || '';
         const inp = row.querySelector('.net-in[data-f="address"]');
+        const pinp = row.querySelector('.net-in[data-f="payoutAddress"]');
+        const payload = { symbol: sym, network: net };
+        if (inp) payload.address = inp.value.trim();
+        if (pinp) payload.payoutAddress = pinp.value.trim();
         await api('/api/v1/coin-addresses', {
           method: 'POST',
-          body: JSON.stringify({ symbol: sym, network: net, address: inp.value.trim() }),
+          body: JSON.stringify(payload),
         });
         toast(`Dirección de ${sym}${net ? ' (' + net + ')' : ''} guardada`);
         const btn = row.querySelector('.addr-save');

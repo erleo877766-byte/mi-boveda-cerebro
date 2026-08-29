@@ -618,13 +618,33 @@ router.get('/coin-addresses', sessionAuth, async (req, res) => {
 });
 
 // POST /api/v1/coin-addresses - crea/actualiza una direccion por moneda+red.
+// IMPORTANTE: solo actualiza los campos que el cliente envie. Si un campo no
+// viene en el body se conserva el valor existente (evita que guardar una
+// direccion borre las demas del mismo registro, p.ej. address vs payoutAddress).
 router.post('/coin-addresses', sessionAuth, async (req, res) => {
-  const { symbol, network = '', address = '', receiveAddress = '', payoutAddress = '', balance = 0, enabled = true } = req.body || {};
+  const body = req.body || {};
+  const { symbol, network = '' } = body;
   if (!symbol || !String(symbol).trim()) return res.status(400).json({ error: 'symbol requerido' });
-  if (!address && !payoutAddress && !receiveAddress)
-    return res.status(400).json({ error: 'falta al menos una direccion' });
   const sym = String(symbol).toUpperCase();
   const net = String(network || '').trim();
+
+  const existing = await db.prepare('SELECT * FROM coin_addresses WHERE symbol = ? AND network = ?').get(sym, net);
+  const curA = existing?.address ?? '';
+  const curR = existing?.receiveAddress ?? '';
+  const curP = existing?.payoutAddress ?? '';
+  const curB = existing?.balance != null ? Number(existing.balance) : 0;
+  const curE = existing ? existing.enabled === 1 : true;
+
+  const hasOwn = (k) => Object.prototype.hasOwnProperty.call(body, k);
+  const address = hasOwn('address') ? String(body.address || '').trim() : curA;
+  const receiveAddress = hasOwn('receiveAddress') ? String(body.receiveAddress || '').trim() : curR;
+  const payoutAddress = hasOwn('payoutAddress') ? String(body.payoutAddress || '').trim() : curP;
+  const balance = hasOwn('balance') ? Number(body.balance) || 0 : curB;
+  const enabled = hasOwn('enabled') ? body.enabled ? 1 : 0 : curE;
+
+  if (!address && !payoutAddress && !receiveAddress)
+    return res.status(400).json({ error: 'falta al menos una direccion' });
+
   // Validar el FORMATO de cada direccion segun la moneda: un typo aqui
   // significa fondos enviados a una direccion inexistente o de otro.
   for (const [field, value] of [['address', address], ['receiveAddress', receiveAddress], ['payoutAddress', payoutAddress]]) {
@@ -639,10 +659,7 @@ router.post('/coin-addresses', sessionAuth, async (req, res) => {
     ON CONFLICT(symbol, network) DO UPDATE SET
       address=excluded.address, receiveAddress=excluded.receiveAddress,
       payoutAddress=excluded.payoutAddress, balance=excluded.balance, enabled=excluded.enabled
-  `).run(
-    sym, net, String(address).trim(), String(receiveAddress).trim(), String(payoutAddress).trim(),
-    Number(balance) || 0, enabled ? 1 : 0
-  );
+  `).run(sym, net, address, receiveAddress, payoutAddress, balance, enabled);
   res.json(await db.prepare('SELECT * FROM coin_addresses WHERE symbol = ? AND network = ?').get(sym, net));
 });
 
